@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Generated data — large, rebuilt by pipeline scripts
+data/cache/
+data/games/
+data/odds/
+data/bets/
+
+# Trained model binaries — rebuilt by train_combined.py / train_props.py
+data/models/*.joblib
+
+# Keep hand-edited config files that live in data/models/
+!data/models/stat_reliability.json
+!data/models/dispersion.json
+
+# Secrets / environment
+.env
+*.env
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
