@@ -418,28 +418,21 @@ with main_tab_intervals:
         use_container_width=True, hide_index=True,
     )
 
-    # --- Section 2: Player intervals ---
+    # --- Section 2: Player intervals — all games ---
     st.subheader("Player stat intervals")
-
-    game_labels = [f"{gp.away_team} @ {gp.home_team}" for gp in slate.games]
-    selected_game_label = st.selectbox("Select game", game_labels, key="interval_game_sel")
-    sel_gp = slate.games[game_labels.index(selected_game_label)]
-
-    ci_col_cfg = {}  # no special config needed — CI columns are strings
 
     def _show_batter_intervals(batters: list[dict], team: str):
         if not batters:
-            st.info(f"No batter data for {team}.")
+            st.caption(f"No batter data for {team}.")
             return
         df = _batter_ci_rows(batters, fits)
         if df.empty:
             return
-        # Numeric columns get number format; CI columns stay as text
         num_cfg = {c: st.column_config.NumberColumn(c, format="%.2f")
                    for c in ["PA", "H", "HR", "TB", "RBI", "R", "K", "BB"]}
         st.dataframe(df, column_config=num_cfg,
                      use_container_width=True, hide_index=True,
-                     height=min(500, 38 * len(df) + 38))
+                     height=min(600, 38 * len(df) + 38))
 
     def _show_starter_intervals(starter: dict | None, team: str):
         if not starter:
@@ -453,17 +446,20 @@ with main_tab_intervals:
         st.dataframe(df, column_config=num_cfg,
                      use_container_width=True, hide_index=True)
 
-    bat_c1, bat_c2 = st.columns(2)
-    with bat_c1:
-        st.markdown(f"**{sel_gp.away_team} batters**")
-        _show_batter_intervals(sel_gp.away_batters, sel_gp.away_team)
-        st.markdown(f"**{sel_gp.away_team} starter:** {sel_gp.away_sp_name or '?'}")
-        _show_starter_intervals(sel_gp.away_starter, sel_gp.away_team)
-    with bat_c2:
-        st.markdown(f"**{sel_gp.home_team} batters**")
-        _show_batter_intervals(sel_gp.home_batters, sel_gp.home_team)
-        st.markdown(f"**{sel_gp.home_team} starter:** {sel_gp.home_sp_name or '?'}")
-        _show_starter_intervals(sel_gp.home_starter, sel_gp.home_team)
+    for gp in slate.games:
+        matchup_label = f"{gp.away_team} @ {gp.home_team}  —  {gp.pred_away_runs:.1f}–{gp.pred_home_runs:.1f} pred"
+        with st.expander(matchup_label, expanded=True):
+            bat_c1, bat_c2 = st.columns(2)
+            with bat_c1:
+                st.markdown(f"**{gp.away_team} batters**")
+                _show_batter_intervals(gp.away_batters, gp.away_team)
+                st.markdown(f"**{gp.away_team} starter:** {gp.away_sp_name or '?'}")
+                _show_starter_intervals(gp.away_starter, gp.away_team)
+            with bat_c2:
+                st.markdown(f"**{gp.home_team} batters**")
+                _show_batter_intervals(gp.home_batters, gp.home_team)
+                st.markdown(f"**{gp.home_team} starter:** {gp.home_sp_name or '?'}")
+                _show_starter_intervals(gp.home_starter, gp.home_team)
 
     # --- Section 3: CI width summary (which bets are most certain?) ---
     st.subheader("Narrowest intervals — highest certainty bets")
@@ -503,7 +499,6 @@ with main_tab_intervals:
         width_df = (
             pd.DataFrame(width_rows)
             .sort_values("CI width")
-            .head(20)
             .reset_index(drop=True)
         )
         st.dataframe(
