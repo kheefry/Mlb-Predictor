@@ -335,10 +335,11 @@ with main_tab_value:
                         key=lambda x: -(x.get("confidence") or 0),
                     )[:20]
                 else:
+                    _market_pool = getattr(slate, "all_bets", []) or _all_bets
                     pool = sorted(
-                        [b for b in _all_bets if b.get("market") in markets],
+                        [b for b in _market_pool if b.get("market") in markets],
                         key=lambda x: -x.get(sort_key, 0),
-                    )
+                    )[:20]
                 if not pool:
                     st.info(f"No value bets for {label}.")
                     continue

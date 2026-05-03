@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from . import mlb_api, parks, weather, statcast as sc
+from . import mlb_api, parks, weather, statcast as sc, lineup_features as lf
 
 
 # ---------- Pitcher quality ----------
@@ -295,6 +295,19 @@ class GameFeatures:
     # Umpire — HP umpire K-rate multiplier (1.0 = league avg; EB-shrunk)
     ump_k_mult: float = 1.0
 
+    # Lineup-weighted offense (PA-weighted aggregate over the 9 starters).
+    # Defaults match the team-aggregate values when no lineup is supplied so
+    # rows from older datasets stay sane.
+    home_lineup_ops: float = 0.720; away_lineup_ops: float = 0.720
+    home_lineup_woba: float = 0.315; away_lineup_woba: float = 0.315
+    home_lineup_k_pct: float = 0.225; away_lineup_k_pct: float = 0.225
+    home_lineup_bb_pct: float = 0.085; away_lineup_bb_pct: float = 0.085
+    # Platoon-adjusted: lineup wOBA vs OPPOSING starter's throwing hand.
+    home_lineup_xwoba_vs_hand: float = 0.315
+    away_lineup_xwoba_vs_hand: float = 0.315
+    # Pipe-delimited starter player_ids ("123|456|...") for downstream use.
+    home_lineup_ids: str = ""; away_lineup_ids: str = ""
+
 
 def build_game_features(
     game: dict,
@@ -305,6 +318,13 @@ def build_game_features(
     team_pit_recent: dict[int, dict] | None = None,
     sc_team_bat: dict[int, dict] | None = None,
     sc_pit: dict[int, dict] | None = None,
+    home_lineup_ids: list[int] | None = None,
+    away_lineup_ids: list[int] | None = None,
+    batter_stats: dict[int, dict] | None = None,
+    bat_vs_l: dict[int, dict] | None = None,
+    bat_vs_r: dict[int, dict] | None = None,
+    bat_sides: dict[int, str] | None = None,
+    pit_throws: dict[int, str] | None = None,
 ) -> Optional[GameFeatures]:
     """Build one feature row for a scheduled game given pre-game stats lookups.
 
@@ -363,6 +383,40 @@ def build_game_features(
     away_sp_sc = sc.shrunk_pitcher_sc(_sc_p.get(away_sp_id) if away_sp_id else None)
     home_sp_xera_sc = home_sp_sc["xera_sc"]
     away_sp_xera_sc = away_sp_sc["xera_sc"]
+
+    # Lineup features. When no lineup is supplied, fall back to team aggregates
+    # so older callers and historical rows missing lineup data stay coherent.
+    _bs = batter_stats or {}
+    _bvl = bat_vs_l or {}
+    _bvr = bat_vs_r or {}
+    _bsides = bat_sides or {}
+    _pthrows = pit_throws or {}
+
+    home_lu = list(home_lineup_ids or [])
+    away_lu = list(away_lineup_ids or [])
+
+    if home_lu and _bs:
+        h_lu_off = lf.lineup_offense(home_lu, _bs)
+    else:
+        h_lu_off = {"ops": home_off["ops"], "woba": home_off["woba"],
+                    "k_pct": home_off["k_pct"], "bb_pct": home_off["bb_pct"]}
+    if away_lu and _bs:
+        a_lu_off = lf.lineup_offense(away_lu, _bs)
+    else:
+        a_lu_off = {"ops": away_off["ops"], "woba": away_off["woba"],
+                    "k_pct": away_off["k_pct"], "bb_pct": away_off["bb_pct"]}
+
+    # Platoon match-up: home lineup vs AWAY starter's throwing hand, etc.
+    away_sp_throws = (_pthrows.get(away_sp_id, "") or "R").upper() if away_sp_id else "R"
+    home_sp_throws = (_pthrows.get(home_sp_id, "") or "R").upper() if home_sp_id else "R"
+    if home_lu and _bs and (_bvl or _bvr):
+        h_lu_vs = lf.lineup_xwoba_vs_hand(home_lu, away_sp_throws, _bvl, _bvr, _bsides, _bs)
+    else:
+        h_lu_vs = h_lu_off["woba"]
+    if away_lu and _bs and (_bvl or _bvr):
+        a_lu_vs = lf.lineup_xwoba_vs_hand(away_lu, home_sp_throws, _bvl, _bvr, _bsides, _bs)
+    else:
+        a_lu_vs = a_lu_off["woba"]
 
     return GameFeatures(
         game_pk=game.get("gamePk"),
@@ -427,4 +481,13 @@ def build_game_features(
         away_off_barrel_rate=away_off_barrel_rate,
         home_sp_xera_sc=home_sp_xera_sc,
         away_sp_xera_sc=away_sp_xera_sc,
+
+        # Lineup-weighted offense
+        home_lineup_ops=h_lu_off["ops"], away_lineup_ops=a_lu_off["ops"],
+        home_lineup_woba=h_lu_off["woba"], away_lineup_woba=a_lu_off["woba"],
+        home_lineup_k_pct=h_lu_off["k_pct"], away_lineup_k_pct=a_lu_off["k_pct"],
+        home_lineup_bb_pct=h_lu_off["bb_pct"], away_lineup_bb_pct=a_lu_off["bb_pct"],
+        home_lineup_xwoba_vs_hand=h_lu_vs, away_lineup_xwoba_vs_hand=a_lu_vs,
+        home_lineup_ids=lf.serialize_lineup_ids(home_lu),
+        away_lineup_ids=lf.serialize_lineup_ids(away_lu),
     )

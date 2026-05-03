@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import mlb_api, features as feats
+from src import mlb_api, features as feats, lineup_features as lf
 
 SEASON = 2025
 SEASON_START = date(2025, 3, 27)        # opening day 2025
@@ -77,6 +77,17 @@ def main():
     snaps = weekly_snapshots(SEASON, SEASON_START, SEASON_END)
     print(f"  {len(snaps)} snapshots loaded")
 
+    print("Pulling 2025 platoon splits (one-time, cached)...")
+    bat_vs_l = mlb_api.player_splits_bulk(SEASON, "hitting", "l")
+    bat_vs_r = mlb_api.player_splits_bulk(SEASON, "hitting", "r")
+    bat_sides = mlb_api.batter_bats_bulk(SEASON)
+    pit_throws = mlb_api.pitcher_throws_bulk(SEASON)
+    bat_vs_l = {int(k): v for k, v in bat_vs_l.items()}
+    bat_vs_r = {int(k): v for k, v in bat_vs_r.items()}
+    bat_sides = {int(k): v for k, v in bat_sides.items()}
+    pit_throws = {int(k): v for k, v in pit_throws.items()}
+    print(f"  splits: vL={len(bat_vs_l)} vR={len(bat_vs_r)} sides={len(bat_sides)} throws={len(pit_throws)}")
+
     out_dir = ROOT / "data" / "games"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -91,10 +102,26 @@ def main():
         snap = lookup_snapshot(snaps, gdate)
         if not snap:
             continue
+        # Pre-fetch boxscore for lineup recovery (also reused below for stats).
+        pre_box: dict | None = None
+        h_lu_ids: list[int] = []; a_lu_ids: list[int] = []
+        try:
+            pre_box = mlb_api.boxscore(g.get("gamePk"))
+            h_lu_ids = lf.extract_starting_lineup(pre_box, "home")
+            a_lu_ids = lf.extract_starting_lineup(pre_box, "away")
+        except Exception:
+            pre_box = None
+
+        snap_bat = {int(k): v for k, v in snap.get("bat", {}).items()}
         try:
             f = feats.build_game_features(
                 g, snap["team_off"], snap["team_pit"], snap["pit"],
                 team_off_recent=None, team_pit_recent=None,
+                home_lineup_ids=h_lu_ids,
+                away_lineup_ids=a_lu_ids,
+                batter_stats=snap_bat,
+                bat_vs_l=bat_vs_l, bat_vs_r=bat_vs_r,
+                bat_sides=bat_sides, pit_throws=pit_throws,
             )
         except Exception:
             continue
@@ -104,7 +131,7 @@ def main():
 
         # Boxscore extract for player-level backtest
         try:
-            box = mlb_api.boxscore(f.game_pk)
+            box = pre_box if pre_box is not None else mlb_api.boxscore(f.game_pk)
             for side in ("home", "away"):
                 pdata = box.get("teams", {}).get(side, {}).get("players", {})
                 team_id = f.home_team_id if side == "home" else f.away_team_id

@@ -34,9 +34,15 @@ from sklearn.isotonic import IsotonicRegression
 # captures it), and the linear-combination interaction off_minus_oppsp
 # (perfectly collinear with off_rpg + opp_sp_era).
 FEATURES = [
-    # Offense (batting team) — season
-    "off_rpg", "off_bb_pct", "off_ops", "off_babip",
-    # Statcast offense — park/defense-neutral contact quality (replaces redundant off_woba)
+    # Offense (batting team) — season team aggregate (broad context)
+    "off_rpg", "off_babip",
+    # Lineup-weighted offense — replaces team-aggregate OPS/BB%/wOBA. PA-weighted
+    # over the 9 confirmed starters, so role-player drift doesn't dilute the signal.
+    "lineup_ops", "lineup_bb_pct", "lineup_woba",
+    # Platoon: lineup wOBA vs the OPPOSING starter's throwing hand (EB-shrunk).
+    "lineup_xwoba_vs_hand",
+    # Statcast offense — park/defense-neutral contact quality (team-level, kept
+    # alongside lineup features for stability when lineup PA samples are thin).
     "off_xwoba_sc",
     # Opposing starter (advanced)
     "opp_sp_xfip", "opp_sp_fip_minus", "opp_sp_bb9", "opp_sp_hr9",
@@ -118,6 +124,12 @@ def _half(g: dict, batting: str) -> dict:
         "off_barrel_rate": _pick(g, f"{h}_off_barrel_rate", 7.8),
         "opp_sp_xera_sc":  _pick(g, f"{o}_sp_xera_sc",      4.20),
         "ump_k_mult":      _pick(g, "ump_k_mult",            1.0),
+        # Lineup-weighted offense (own batting team)
+        "lineup_ops":      _pick(g, f"{h}_lineup_ops",       0.720),
+        "lineup_woba":     _pick(g, f"{h}_lineup_woba",      0.315),
+        "lineup_bb_pct":   _pick(g, f"{h}_lineup_bb_pct",    0.085),
+        "lineup_k_pct":    _pick(g, f"{h}_lineup_k_pct",     0.225),
+        "lineup_xwoba_vs_hand": _pick(g, f"{h}_lineup_xwoba_vs_hand", 0.315),
         # Engineered interactions
         # off_x_park and off_minus_oppsp are per-side computed in features.py
         # under the batting team's prefix, so use own().

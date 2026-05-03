@@ -79,7 +79,16 @@ def fit_dispersion(proj: np.ndarray, actual: np.ndarray, n_bins: int = 4,
 
 
 def fit_all(bat_csv: Path, pit_csv: Path) -> dict:
-    """Fit dispersion for every prop stat. Saves a JSON-serializable dict."""
+    """Fit dispersion for every prop stat. Saves a JSON-serializable dict.
+
+    Pitcher stats use floor=1.5 because the analytical projection itself is
+    biased (early-season K/9 estimates are noisy). With a Poisson floor of 1.0
+    the resulting fit produced phantom UNDER edges — see the May 2026 bet log:
+    pitcher_k UNDERs went 9-12 with 21/34 picks, mostly because the model
+    projection sat below the line and the tight dispersion put 60%+ probability
+    on UNDER. Floor of 1.5 brings these closer to the empirical pitcher_er
+    ratio (~1.65) and deflates the spurious edges.
+    """
     bat = pd.read_csv(bat_csv)
     pit = pd.read_csv(pit_csv)
 
@@ -96,7 +105,7 @@ def fit_all(bat_csv: Path, pit_csv: Path) -> dict:
     ]:
         if proj_col not in bat.columns:
             continue
-        fit = fit_dispersion(bat[proj_col].values, bat[actual_col].values)
+        fit = fit_dispersion(bat[proj_col].values, bat[actual_col].values, floor=1.0)
         out["batter"][stat] = fit.to_dict()
 
     for stat, actual_col, proj_col in [
@@ -109,7 +118,7 @@ def fit_all(bat_csv: Path, pit_csv: Path) -> dict:
     ]:
         if proj_col not in pit.columns:
             continue
-        fit = fit_dispersion(pit[proj_col].values, pit[actual_col].values)
+        fit = fit_dispersion(pit[proj_col].values, pit[actual_col].values, floor=1.5)
         out["pitcher"][stat] = fit.to_dict()
 
     return out

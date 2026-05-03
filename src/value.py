@@ -53,6 +53,25 @@ def devig_two_way(p_a: float, p_b: float) -> tuple[float, float]:
     return p_a / s, p_b / s
 
 
+# Shrinkage applied to raw model probabilities before computing edge. The
+# logged bet outcomes from the first two slates showed picks rated >=.65 won
+# only 33% — strong overconfidence at the high end. Shrinking toward 0.5
+# closes the gap between displayed model probability and realised win rate.
+# 0.6 was set from the bucket calibration (slope of empirical vs nominal).
+CALIBRATION_SHRINK = 0.6
+
+
+def calibrate_prob(p: float) -> float:
+    """Shrink a raw model probability toward 0.5.
+
+    p_cal = 0.5 + CALIBRATION_SHRINK * (p - 0.5)
+
+    Applied to every model probability before edge calculation. Display
+    probability and edge both reflect the calibrated value.
+    """
+    return 0.5 + CALIBRATION_SHRINK * (p - 0.5)
+
+
 def kelly_fraction(p: float, decimal_odds: float, cap: float = 0.05) -> float:
     """Kelly bet size as fraction of bankroll. Capped to cap (e.g. 5%)."""
     b = decimal_odds - 1.0
@@ -293,7 +312,7 @@ def evaluate_game_lines(
     # Moneyline
     ml = book.get("moneyline") or {}
     if "home" in ml and "away" in ml:
-        p_home = home_win_prob(lam_home, lam_away)
+        p_home = calibrate_prob(home_win_prob(lam_home, lam_away))
         p_away = 1.0 - p_home
         imp_home = american_to_prob(ml["home"])
         imp_away = american_to_prob(ml["away"])
@@ -317,7 +336,7 @@ def evaluate_game_lines(
     tot = book.get("total") or {}
     if "line" in tot:
         line = float(tot["line"])
-        p_over = total_over_prob(lam_home, lam_away, line)
+        p_over = calibrate_prob(total_over_prob(lam_home, lam_away, line))
         p_under = 1.0 - p_over
         imp_o = american_to_prob(tot.get("over", -110))
         imp_u = american_to_prob(tot.get("under", -110))
@@ -344,7 +363,7 @@ def evaluate_game_lines(
     if "line" in rl:
         home_line = float(rl["line"])
         away_line = -home_line
-        p_home_cover = run_line_cover_prob(lam_home, lam_away, home_line)
+        p_home_cover = calibrate_prob(run_line_cover_prob(lam_home, lam_away, home_line))
         p_away_cover = 1.0 - p_home_cover
         imp_h = american_to_prob(rl.get("home", +160))
         imp_a = american_to_prob(rl.get("away", -185))
@@ -418,7 +437,7 @@ def evaluate_prop(name: str, market: str, mean_proj: float, line: float,
     on individual binary props is typically 6-12%).
     """
     disp = get_dispersion(market, mean_proj)
-    p_over = prob_over_count(mean_proj, line, disp)
+    p_over = calibrate_prob(prob_over_count(mean_proj, line, disp))
     p_under = 1.0 - p_over
 
     out: list[ValueBet] = []

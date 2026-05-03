@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import mlb_api, features as feats, statcast as sc, umpire as ump
+from src import mlb_api, features as feats, statcast as sc, umpire as ump, lineup_features as lf
 
 SEASON = 2026
 SEASON_START = date(2026, 3, 25)
@@ -186,6 +186,7 @@ def main():
             g_pit_stats = _int_keys(snap["pitcher_stats"])
             g_team_off_recent = _int_keys(snap.get("team_off_recent", {}))
             g_team_pit_recent = _int_keys(snap.get("team_pit_recent", {}))
+            g_bat_stats = _int_keys(snap.get("batter_stats", {}))
             n_snap_used += 1
         else:
             g_team_off = team_off
@@ -193,13 +194,35 @@ def main():
             g_pit_stats = pit_stats
             g_team_off_recent = team_off_recent
             g_team_pit_recent = team_pit_recent
+            g_bat_stats = bat_stats
+
+        # For finished games, fetch boxscore now to recover the actual starting
+        # lineup so lineup-weighted features reflect who really played.
+        # Live/upcoming games use lineups from `mlb_api.extract_lineups` at
+        # predict time; here we leave them blank.
+        h_lu_ids: list[int] = []; a_lu_ids: list[int] = []
+        pre_box: dict | None = None
+        if (g.get("status") or {}).get("codedGameState") == "F":
+            try:
+                pre_box = mlb_api.boxscore(g.get("gamePk"))
+                h_lu_ids = lf.extract_starting_lineup(pre_box, "home")
+                a_lu_ids = lf.extract_starting_lineup(pre_box, "away")
+            except Exception:
+                pre_box = None
 
         try:
             f = feats.build_game_features(g, g_team_off, g_team_pit, g_pit_stats,
                                           team_off_recent=g_team_off_recent,
                                           team_pit_recent=g_team_pit_recent,
                                           sc_team_bat=sc_team_bat,
-                                          sc_pit=sc_pit)
+                                          sc_pit=sc_pit,
+                                          home_lineup_ids=h_lu_ids,
+                                          away_lineup_ids=a_lu_ids,
+                                          batter_stats=g_bat_stats,
+                                          bat_vs_l=bat_vs_l,
+                                          bat_vs_r=bat_vs_r,
+                                          bat_sides=bat_sides,
+                                          pit_throws=pit_throws)
         except Exception as e:
             print(f"  feature build failed for game {g.get('gamePk')}: {e}")
             continue
@@ -212,7 +235,7 @@ def main():
         if f.is_final:
             n_final += 1
             try:
-                box = mlb_api.boxscore(f.game_pk)
+                box = pre_box if pre_box is not None else mlb_api.boxscore(f.game_pk)
 
                 # Extract HP umpire, accumulate K-rate stats, update this row's mult
                 hp_ump = ump.get_hp_umpire_from_boxscore(box)

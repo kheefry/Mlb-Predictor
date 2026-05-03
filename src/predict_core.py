@@ -200,8 +200,18 @@ def predict_slate(target_date: date | str | None = None,
         if st in ("D", "C"):
             continue
 
+        # Pull confirmed lineups first so they feed into the team-runs features.
+        lineups = mlb_api.extract_lineups(g)
+        home_lineup_ids = lineups["home"] or None
+        away_lineup_ids = lineups["away"] or None
+
         f = feats.build_game_features(g, team_off, team_pit, pitcher_stats,
-                                      sc_team_bat=sc_team_bat, sc_pit=sc_pit_data)
+                                      sc_team_bat=sc_team_bat, sc_pit=sc_pit_data,
+                                      home_lineup_ids=home_lineup_ids,
+                                      away_lineup_ids=away_lineup_ids,
+                                      batter_stats=batter_stats,
+                                      bat_vs_l=bat_vs_l, bat_vs_r=bat_vs_r,
+                                      bat_sides=bat_sides, pit_throws=pit_throws)
         if f is None:
             continue
 
@@ -212,10 +222,6 @@ def predict_slate(target_date: date | str | None = None,
             f.ump_k_mult = ump.get_k_mult(_hp, _ump_rates)
         except Exception:
             f.ump_k_mult = 1.0
-
-        lineups = mlb_api.extract_lineups(g)
-        home_lineup_ids = lineups["home"] or None
-        away_lineup_ids = lineups["away"] or None
 
         long = mdl.long_form(pd.DataFrame([asdict(f)]))
         long["pred_runs"] = mdl.predict_ensemble(_all_models, long)
