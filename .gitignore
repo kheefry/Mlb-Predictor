@@ -19,6 +19,7 @@ data/cache/
 data/games/
 data/odds/
 data/bets/
+data/weather/
 
 # Trained model binaries — rebuilt by train_combined.py / train_props.py
 data/models/*.joblib
