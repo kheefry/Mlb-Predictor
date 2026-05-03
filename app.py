@@ -517,26 +517,47 @@ with main_tab_intervals:
 with main_tab_p1:
     st.caption(
         "Props ranked by how confident the model is that the player achieves **at least 1** of that stat. "
-        "Computed from the projected mean using empirically-fitted NegBin dispersion per stat. "
-        "Useful for finding 'safe' Yes props (HR, Hits, K, etc.) where the model sees a high floor."
+        "**Fair Odds** = American odds implied by the model probability (what the line *should* be). "
+        "**Confidence** = stat reliability × outcome uncertainty — higher means the model is both "
+        "accurate on this market and the result is genuinely uncertain."
     )
 
     fits_p1 = _load_disp_fits()
 
+    # Load stat reliability weights for confidence calculation
+    _STAT_REL_PATH = ROOT / "data" / "models" / "stat_reliability.json"
+    try:
+        import json as _json
+        _stat_rel: dict = _json.loads(_STAT_REL_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        _stat_rel = {}
+
+    def _fair_odds(p: float) -> str:
+        """Convert model probability to American odds string."""
+        p = max(0.001, min(0.999, p))
+        if p >= 0.5:
+            return f"-{round(p / (1 - p) * 100)}"
+        return f"+{round((1 - p) / p * 100)}"
+
+    def _confidence(p: float, rel_key: str) -> float:
+        rel = _stat_rel.get(rel_key, 0.10)
+        return round(rel * 4 * p * (1 - p), 4)
+
+    # (display label, proj key, dispersion key, stat_reliability key)
     BATTER_STATS_P1 = [
-        ("H",   "proj_h",    "hits"),
-        ("HR",  "proj_hr",   "hr"),
-        ("TB",  "proj_tb",   "tb"),
-        ("RBI", "proj_rbi",  "rbi"),
-        ("R",   "proj_runs", "runs"),
-        ("K",   "proj_k",    "k"),
-        ("BB",  "proj_bb",   "bb"),
+        ("H",   "proj_h",    "hits",  "prop_hits"),
+        ("HR",  "proj_hr",   "hr",    "prop_hr"),
+        ("TB",  "proj_tb",   "tb",    "prop_tb"),
+        ("RBI", "proj_rbi",  "rbi",   "prop_rbi"),
+        ("R",   "proj_runs", "runs",  "prop_runs"),
+        ("K",   "proj_k",    "k",     "prop_k"),
+        ("BB",  "proj_bb",   "bb",    "prop_bb"),
     ]
     PITCHER_STATS_P1 = [
-        ("K",  "proj_k",   "pitcher_k"),
-        ("H",  "proj_h",   "pitcher_h"),
-        ("BB", "proj_bb",  "pitcher_bb"),
-        ("ER", "proj_er",  "pitcher_er"),
+        ("K",  "proj_k",   "pitcher_k",  "prop_pitcher_k"),
+        ("H",  "proj_h",   "pitcher_h",  "prop_pitcher_h"),
+        ("BB", "proj_bb",  "pitcher_bb", "prop_pitcher_bb"),
+        ("ER", "proj_er",  "pitcher_er", "prop_pitcher_er"),
     ]
 
     p1_rows = []
@@ -545,7 +566,7 @@ with main_tab_p1:
 
         for b in gp.away_batters + gp.home_batters:
             team = gp.away_team if b in gp.away_batters else gp.home_team
-            for label, proj_key, disp_key in BATTER_STATS_P1:
+            for label, proj_key, disp_key, rel_key in BATTER_STATS_P1:
                 mu = b.get(proj_key, 0) or 0
                 if mu <= 0:
                     continue
@@ -555,18 +576,20 @@ with main_tab_p1:
                 if hi == 0:
                     continue  # 90th pct is still 0 — skip
                 p1_rows.append({
-                    "Player":   b.get("name", "?"),
-                    "Team":     team,
-                    "Matchup":  matchup,
-                    "Stat":     label,
-                    "Proj":     round(mu, 2),
-                    "P(≥1)":    round(p1 * 100, 1),
+                    "Player":     b.get("name", "?"),
+                    "Team":       team,
+                    "Matchup":    matchup,
+                    "Stat":       label,
+                    "Proj":       round(mu, 2),
+                    "P(≥1)":      round(p1 * 100, 1),
+                    "Fair Odds":  _fair_odds(p1),
+                    "Confidence": _confidence(p1, rel_key),
                 })
 
         for starter, team in [(gp.away_starter, gp.away_team), (gp.home_starter, gp.home_team)]:
             if not starter:
                 continue
-            for label, proj_key, disp_key in PITCHER_STATS_P1:
+            for label, proj_key, disp_key, rel_key in PITCHER_STATS_P1:
                 mu = starter.get(proj_key, 0) or 0
                 if mu <= 0:
                     continue
@@ -576,12 +599,14 @@ with main_tab_p1:
                 if hi == 0:
                     continue
                 p1_rows.append({
-                    "Player":   starter.get("name", "?") + " (SP)",
-                    "Team":     team,
-                    "Matchup":  matchup,
-                    "Stat":     label,
-                    "Proj":     round(mu, 2),
-                    "P(≥1)":    round(p1 * 100, 1),
+                    "Player":     starter.get("name", "?") + " (SP)",
+                    "Team":       team,
+                    "Matchup":    matchup,
+                    "Stat":       label,
+                    "Proj":       round(mu, 2),
+                    "P(≥1)":      round(p1 * 100, 1),
+                    "Fair Odds":  _fair_odds(p1),
+                    "Confidence": _confidence(p1, rel_key),
                 })
 
     if not p1_rows:
@@ -589,20 +614,22 @@ with main_tab_p1:
     else:
         p1_df = pd.DataFrame(p1_rows).sort_values("P(≥1)", ascending=False).reset_index(drop=True)
 
-        # Stat filter
-        all_stats = sorted(p1_df["Stat"].unique())
-        sel_stats = st.multiselect(
-            "Filter by stat", all_stats, default=all_stats, key="p1_stat_filter"
-        )
+        # Controls row
+        ctrl_c1, ctrl_c2 = st.columns([2, 1])
+        with ctrl_c1:
+            all_stats = sorted(p1_df["Stat"].unique())
+            sel_stats = st.multiselect(
+                "Filter by stat", all_stats, default=all_stats, key="p1_stat_filter"
+            )
+        with ctrl_c2:
+            min_p1 = st.slider(
+                "Min P(≥1)%", min_value=1, max_value=99, value=50, step=1,
+                key="p1_thresh",
+                help="Show props where the model gives at least this probability of ≥1 occurring.",
+            )
+
         if sel_stats:
             p1_df = p1_df[p1_df["Stat"].isin(sel_stats)]
-
-        # Confidence threshold slider
-        min_p1 = st.slider(
-            "Min P(≥1)%", min_value=50, max_value=99, value=70, step=5,
-            key="p1_thresh",
-            help="Only show props where the model gives at least this probability of ≥1 occurring.",
-        )
         p1_df = p1_df[p1_df["P(≥1)"] >= min_p1].reset_index(drop=True)
 
         if p1_df.empty:
@@ -611,8 +638,10 @@ with main_tab_p1:
             st.dataframe(
                 p1_df,
                 column_config={
-                    "Proj":  st.column_config.NumberColumn("Proj",  format="%.2f"),
-                    "P(≥1)": st.column_config.NumberColumn("P(≥1)", format="%.1f%%"),
+                    "Proj":       st.column_config.NumberColumn("Proj",       format="%.2f"),
+                    "P(≥1)":      st.column_config.NumberColumn("P(≥1)",      format="%.1f%%"),
+                    "Fair Odds":  st.column_config.TextColumn("Fair Odds"),
+                    "Confidence": st.column_config.NumberColumn("Confidence", format="%.4f"),
                 },
                 use_container_width=True,
                 hide_index=True,
