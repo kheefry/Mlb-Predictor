@@ -433,11 +433,22 @@ def predict_ensemble(models: list[TeamScoreModel], X: pd.DataFrame,
     """
     if not models:
         raise ValueError("predict_ensemble: empty model list")
-    if len(models) == 1:
-        return models[0].predict_runs(X, mode=mode)
-    valid = [m for m in models if m.glm.n_features_in_ == len(FEATURES)]
+    expected = len(FEATURES)
+    valid = [m for m in models if m.glm.n_features_in_ == expected]
     if not valid:
-        valid = models  # all stale — let predict_runs fill missing features
+        # All models are stale relative to current FEATURES. The previous
+        # behaviour was to try them anyway, which produced a cryptic sklearn
+        # `_check_n_features` ValueError. Surface a clear message instead so
+        # the operator knows to re-run train_combined.
+        counts = sorted({m.glm.n_features_in_ for m in models})
+        raise RuntimeError(
+            f"All ensemble models were trained with a different feature count "
+            f"({counts}) than the current FEATURES list ({expected}). "
+            f"Re-run `python -m scripts.train_combined` to retrain, or pull "
+            f"the latest joblib files."
+        )
+    if len(valid) == 1:
+        return valid[0].predict_runs(X, mode=mode)
     preds = np.array([m.predict_runs(X, mode=mode) for m in valid])
     weights = np.array([1.0 / max(m.train_mae, 0.01) for m in valid])
     weights /= weights.sum()
