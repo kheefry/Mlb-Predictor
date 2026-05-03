@@ -433,7 +433,8 @@ def get_dispersion(market: str, mean_proj: float) -> float:
 def evaluate_prop(name: str, market: str, mean_proj: float, line: float,
                   over_odds: int | None, under_odds: int | None,
                   edge_threshold: float = 0.03,
-                  one_sided_juice: float = 0.06) -> list[ValueBet]:
+                  one_sided_juice: float = 0.06,
+                  one_sided_max_odds: int = 400) -> list[ValueBet]:
     """Compare a player prop to its model projection.
 
     Two-sided (over_odds AND under_odds): we de-vig and report both sides.
@@ -441,6 +442,12 @@ def evaluate_prop(name: str, market: str, mean_proj: float, line: float,
     the no-vig prob by stripping a typical book overround. Default
     one_sided_juice = 0.06 = ~3% per side, conservative for Bovada (their juice
     on individual binary props is typically 6-12%).
+
+    one_sided_max_odds: skip one-sided props with American odds above this
+    threshold (default +400 ≈ 20% implied). Bovada's overround on +500 / +800
+    / +1200 longshots is much wider than 6% — typically 15-25% — so the no-vig
+    estimate is unreliable. Capping prevents fake "edges" on lottery-ticket
+    lines like 'Player runs OVER 1.5' from crowding the leaderboard.
     """
     disp = get_dispersion(market, mean_proj)
     p_over = calibrate_prob(prob_over_count(mean_proj, line, disp))
@@ -466,6 +473,10 @@ def evaluate_prop(name: str, market: str, mean_proj: float, line: float,
                     kelly=kelly_fraction(mp, d),
                 )))
     elif over_odds is not None:
+        # Cap longshots: at +400 or worse, Bovada's juice estimate breaks down
+        # and we'd manufacture fake edges. Drop the bet entirely.
+        if over_odds > one_sided_max_odds:
+            return out
         # One-sided: estimate no-vig prob = implied - juice/2. The no-vig
         # estimate is rough (Bovada batter props carry 6-12% overround on
         # binary markets). We label the description so users know.
