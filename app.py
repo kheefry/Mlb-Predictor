@@ -304,8 +304,9 @@ with main_tab_value:
         )
 
     MARKET_TABS = [
-        ("Overall",     None),
-        ("Confidence",  "__confidence__"),
+        ("Overall",        None),
+        ("Confidence",     "__confidence__"),
+        ("Pure Confidence","__pure_confidence__"),
         ("HR",          ["prop_hr"]),
         ("Hits",        ["prop_hits"]),
         ("Total Bases", ["prop_tb"]),
@@ -328,6 +329,11 @@ with main_tab_value:
                     pool = sorted(slate.top_value, key=lambda x: -x.get(sort_key, 0))[:40]
                 elif markets == "__confidence__":
                     pool = sorted(_all_bets, key=lambda x: -(x.get("confidence") or 0))[:20]
+                elif markets == "__pure_confidence__":
+                    pool = sorted(
+                        getattr(slate, "all_bets", []) or [],
+                        key=lambda x: -(x.get("confidence") or 0),
+                    )[:20]
                 else:
                     pool = sorted(
                         [b for b in _all_bets if b.get("market") in markets],
@@ -337,11 +343,19 @@ with main_tab_value:
                     st.info(f"No value bets for {label}.")
                     continue
 
-                is_confidence_tab = (markets == "__confidence__")
-                if is_confidence_tab:
+                is_confidence_tab = (markets in ("__confidence__", "__pure_confidence__"))
+                is_pure_confidence_tab = (markets == "__pure_confidence__")
+                if markets == "__confidence__":
                     st.caption(
-                        "**Confidence** = stat-reliability × 4·p·(1−p) — peaks at even-money bets "
-                        "backed by high-reliability markets. Top picks here are logged daily for outcome tracking."
+                        "**Confidence** = stat-reliability × 4·p·(1−p), filtered to bets that beat "
+                        "the no-vig line by your edge threshold. Top picks here are logged daily for outcome tracking."
+                    )
+                elif is_pure_confidence_tab:
+                    st.caption(
+                        "**Pure Confidence** = stat-reliability × 4·p·(1−p) on **every** evaluated bet, "
+                        "ignoring the edge filter. Surfaces the bets the model is most certain about "
+                        "regardless of whether the book line agrees — useful for spotting model conviction "
+                        "even when the price isn't favourable."
                     )
 
                 _raw = pd.DataFrame(pool)

@@ -72,6 +72,9 @@ class GamePrediction:
     # Value bets (filtered to >= edge_threshold)
     game_value: list[dict] = field(default_factory=list)
     prop_value: list[dict] = field(default_factory=list)
+    # Every evaluated bet for this game, regardless of edge — used by the
+    # Pure Confidence leaderboard (model-certainty only, ignores book agreement).
+    all_bets: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +87,8 @@ class SlateResult:
     games: list[GamePrediction]
     top_value: list[dict]            # ranked across slate
     concentration_warning: Optional[str] = None
+    # Slate-wide unfiltered bet pool for Pure Confidence ranking.
+    all_bets: list[dict] = field(default_factory=list)
 
 
 # ---------- Helpers ----------
@@ -301,13 +306,15 @@ def predict_slate(target_date: date | str | None = None,
         if bk is not None:
             gp.book = bk
             gp.book_source = odds_source if bk in book_data else "manual"
-            game_value = value.evaluate_game_lines(
+            game_value_all = value.evaluate_game_lines(
                 f.home_team, f.away_team, home_pred, away_pred, bk,
-                edge_threshold=edge_threshold,
+                edge_threshold=-1.0,
             )
-            for vb in game_value:
+            for vb in game_value_all:
                 vb.game_pk = int(f.game_pk)
+            game_value = [vb for vb in game_value_all if vb.edge_pct >= edge_threshold * 100]
             gp.game_value = [_vb_to_dict(vb) for vb in game_value]
+            gp.all_bets.extend(_vb_to_dict(vb) for vb in game_value_all)
             all_value_bets.extend(game_value)
 
         # Player props for this game
@@ -377,14 +384,16 @@ def predict_slate(target_date: date | str | None = None,
                     mean = means.get(pp["market"])
                 if mean is None:
                     continue
-                vbs = value.evaluate_prop(name, pp["market"], mean, pp["line"],
-                                          pp.get("over"), pp.get("under"),
-                                          edge_threshold=edge_threshold)
-                if vbs:
-                    _pid = int(pdata.get("player_id") or 0) if not is_pitcher else int(pdata.get("player_id") or 0)
-                    for vb in vbs:
+                vbs_all = value.evaluate_prop(name, pp["market"], mean, pp["line"],
+                                              pp.get("over"), pp.get("under"),
+                                              edge_threshold=-1.0)
+                if vbs_all:
+                    _pid = int(pdata.get("player_id") or 0)
+                    for vb in vbs_all:
                         vb.game_pk = int(f.game_pk)
-                        vb.player_id = _pid if not is_pitcher else _pid
+                        vb.player_id = _pid
+                    gp.all_bets.extend(_vb_to_dict(vb) for vb in vbs_all)
+                    vbs = [vb for vb in vbs_all if vb.edge_pct >= edge_threshold * 100]
                     game_prop_value.extend(vbs)
                     all_value_bets.extend(vbs)
             gp.prop_value = [_vb_to_dict(vb) for vb in game_prop_value]
@@ -436,6 +445,10 @@ def predict_slate(target_date: date | str | None = None,
     except Exception:
         pass
 
+    slate_all_bets: list[dict] = []
+    for gp in games_out:
+        slate_all_bets.extend(gp.all_bets)
+
     return SlateResult(
         target_date=target.isoformat(),
         odds_source=odds_source,
@@ -445,4 +458,5 @@ def predict_slate(target_date: date | str | None = None,
         games=games_out,
         top_value=top_value,
         concentration_warning=concentration_warning,
+        all_bets=slate_all_bets,
     )
