@@ -23,6 +23,40 @@ BOX_CSV   = ROOT / "data" / "games" / "box_2026.csv"
 
 # ---------- Logging ----------
 
+def _is_duplicate(entry: dict, existing: list[dict], date_str: str) -> bool:
+    """Return True if an equivalent bet is already logged for this date.
+
+    Rules:
+    - Same description on same date is always a duplicate.
+    - For game-line markets (total, moneyline, run_line): block any bet on the
+      same game_pk + market, regardless of direction (Over vs Under).
+      This prevents the app being run twice in a day from logging conflicting
+      sides of the same game total.
+    - For player props: block same game_pk + market + player_id combination.
+    """
+    game_pk = entry.get("game_pk")
+    market  = entry.get("market", "")
+    pid     = entry.get("player_id")
+
+    for e in existing:
+        if e.get("date") != date_str:
+            continue
+        # Always block exact description match
+        if e.get("description") == entry.get("description"):
+            return True
+        # Game-line markets: one side per game per day
+        if market in ("moneyline", "total", "run_line") and game_pk is not None:
+            if e.get("game_pk") == game_pk and e.get("market") == market:
+                return True
+        # Player props: one bet per player per market per game per day
+        elif pid is not None and game_pk is not None:
+            if (e.get("game_pk") == game_pk
+                    and e.get("market") == market
+                    and e.get("player_id") == pid):
+                return True
+    return False
+
+
 def log_picks(target_date: str | date, bets: list[dict], top_n: int = 10) -> None:
     """Save the top_n highest-confidence bets to the log file.
 
@@ -55,9 +89,7 @@ def log_picks(target_date: str | date, bets: list[dict], top_n: int = 10) -> Non
             "outcome":     None,   # filled by evaluate_outcomes()
             "actual":      None,   # actual stat value or score
         }
-        # Avoid duplicate entries for the same date + description
-        if not any(e["date"] == date_str and e["description"] == entry["description"]
-                   for e in existing):
+        if not _is_duplicate(entry, existing, date_str):
             existing.append(entry)
 
     LOG_PATH.write_text(json.dumps(existing, indent=2, default=str), encoding="utf-8")

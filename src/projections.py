@@ -487,15 +487,23 @@ def project_pitcher(
     from .features import pitcher_quality_index
     pq = pitcher_quality_index(pit_stats)
     # If we have meaningful recent BF (last 14d), blend recent pitcher quality
-    # with season — typically captures sudden velocity drops, command issues.
+    # with season — captures velocity drops, command issues, hot K streaks.
     if recent_stats:
         rec_bf = _safe(recent_stats.get("battersFaced"))
-        if rec_bf >= 30:
+        if rec_bf >= 20:   # lowered from 30 — 1 start (~20 BF) is enough to use
             pq_recent = pitcher_quality_index(recent_stats)
-            rw = min(0.4, rec_bf / 200.0)
-            for k in ("k9", "bb9", "whip", "era", "fip", "xfip", "hr9"):
+            # Conservative blend for most metrics (ERA/FIP are noisy over 1-2 starts)
+            rw = min(0.40, rec_bf / 200.0)
+            for k in ("bb9", "whip", "era", "fip", "xfip", "hr9"):
                 if k in pq and k in pq_recent:
                     pq[k] = (1 - rw) * pq[k] + rw * pq_recent[k]
+            # K/9 gets a higher recent-form weight: books already price recent K
+            # streaks in, so a low-season-average pitcher on a hot K run is
+            # systematically under-projected without this.  At 50 BF (2-3 starts)
+            # this gives ~50% weight on recent K/9; caps at 60%.
+            if "k9" in pq and "k9" in pq_recent:
+                rw_k = min(0.60, rec_bf / 100.0)
+                pq["k9"] = (1 - rw_k) * pq["k9"] + rw_k * pq_recent["k9"]
 
     e_outs = _expected_outs(pq, opp_off_idx.get("rpg", 4.5))
     e_ip = e_outs / 3.0
