@@ -161,8 +161,9 @@ def predict_slate(target_date: date | str | None = None,
                             for pid, s in batter_stats.items() if s.get("team_id")}
         sc_team_bat = sc.get_team_batting(2026, _player_team_map)
         sc_pit_data = sc.get_pitcher_stats(2026)
+        sc_bat_data = sc.get_batter_stats(2026)
     except Exception:
-        sc_team_bat, sc_pit_data = {}, {}
+        sc_team_bat, sc_pit_data, sc_bat_data = {}, {}, {}
 
     model = mdl.TeamScoreModel.load(ROOT / "data" / "models" / "team_runs.joblib")
     _model_dir = ROOT / "data" / "models"
@@ -287,7 +288,8 @@ def predict_slate(target_date: date | str | None = None,
                                         bat_side=pl["bat_side"],
                                         opp_pit_throws=pl["opp_pit_throws"],
                                         bat_split=pl["bat_split"],
-                                        is_switch=pl.get("is_switch", False))
+                                        is_switch=pl.get("is_switch", False),
+                                        sc_stats=sc_bat_data.get(pid))
                 batters_out.append(asdict(p))
                 order += 1
 
@@ -387,7 +389,8 @@ def predict_slate(target_date: date | str | None = None,
                                                 bat_side=pl["bat_side"],
                                                 opp_pit_throws=pl["opp_pit_throws"],
                                                 bat_split=pl["bat_split"],
-                                                is_switch=pl.get("is_switch", False))
+                                                is_switch=pl.get("is_switch", False),
+                                                sc_stats=sc_bat_data.get(pid))
                     means = {
                         "hr": bproj.proj_hr, "hits": bproj.proj_h, "tb": bproj.proj_tb,
                         "rbi": bproj.proj_rbi, "runs": bproj.proj_runs, "k": bproj.proj_k,
@@ -406,7 +409,7 @@ def predict_slate(target_date: date | str | None = None,
                 # doesn't capture this discrete-event risk well. May 2 example:
                 # Lowder was a top-confidence OVER 4.5 K pick that went 1 K on
                 # a quick pull. UNDERs are unaffected (a short start helps them).
-                if is_pitcher and vbs_all and pproj.expected_outs < 13.5:
+                if is_pitcher and vbs_all and pproj.expected_outs < 14.5:
                     vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
                 if vbs_all:
                     _pid = int(pdata.get("player_id") or 0)

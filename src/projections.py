@@ -48,6 +48,12 @@ LG = {
 # prior=30 gives elite hitters 80% weight on themselves, league 20%.
 PRIOR_PA = 30.0
 PRIOR_BF = 50.0
+# K rate stabilises faster than overall rate stats (~60 PA per FanGraphs
+# stabilisation research). The May 2026 7-day backtest showed bin-1 batter K
+# over-projected by 0.143 and bin-5 under-projected by 0.186 — a 33%
+# compression toward the mean. Loosening to 20 keeps elite K-rate hitters at
+# their own number more aggressively.
+PRIOR_PA_K = 20.0
 
 
 def _safe(x, default=0.0):
@@ -360,6 +366,7 @@ def project_batter(
     opp_pit_throws: str | None = None,
     bat_split: dict | None = None,
     is_switch: bool = False,
+    sc_stats: dict | None = None,
 ) -> BatterProjection:
     """Empirical-Bayes shrunk rates × expected PA × matchup multipliers.
 
@@ -412,13 +419,28 @@ def project_batter(
     raw_k_pa = k / pa if pa else LG["k_pct"]
     raw_rbi_pa = rbi / pa if pa else LG["rbi_per_pa"]
 
+    # HR/PA prior: when Statcast barrel rate is available, shrink toward a
+    # barrel-derived prior instead of the flat league mean (3.0%/PA). League
+    # barrel rate ~8% of batted balls maps to ~3.0% HR/PA, so the conversion
+    # factor barrel_pct × 0.00375 anchors the prior to the player's actual
+    # contact quality. A 0% barrel hitter's HR/PA prior is ~0%, not 3% —
+    # fixing the May 2026 calibration miss where bin-2 HR was projected at
+    # 2x the actual rate (low-power hitters inflated by mean shrinkage).
+    if sc_stats and sc_stats.get("barrel_pct") is not None:
+        try:
+            hr_prior = max(0.005, float(sc_stats["barrel_pct"]) * 0.00375)
+        except (TypeError, ValueError):
+            hr_prior = LG["hr_per_pa"]
+    else:
+        hr_prior = LG["hr_per_pa"]
+
     # Shrink each rate toward league average by PA
     avg = _shrink(raw_avg, LG["h_per_ab"], pa, PRIOR_PA)
-    hr_pa = _shrink(raw_hr_pa, LG["hr_per_pa"], pa, PRIOR_PA)
+    hr_pa = _shrink(raw_hr_pa, hr_prior, pa, PRIOR_PA)
     d_pa  = _shrink(raw_2b_pa, LG["double_per_ab"] * 0.93, pa, PRIOR_PA)
     t_pa  = _shrink(raw_3b_pa, LG["triple_per_ab"] * 0.93, pa, PRIOR_PA)
     bb_pa = _shrink(raw_bb_pa, LG["bb_pct"], pa, PRIOR_PA)
-    k_pa  = _shrink(raw_k_pa, LG["k_pct"], pa, PRIOR_PA)
+    k_pa  = _shrink(raw_k_pa, LG["k_pct"], pa, PRIOR_PA_K)
     rbi_pa = _shrink(raw_rbi_pa, LG["rbi_per_pa"], pa, PRIOR_PA)
     sb_pg = _shrink(sb / max(_safe(bat_stats.get("gamesPlayed"), 1), 1), LG["sb_per_g"],
                     _safe(bat_stats.get("gamesPlayed"), 0), 30.0)

@@ -72,6 +72,12 @@ def pitcher_quality_index(stats: dict) -> dict:
     # for an end-of-April starter, w jumps from ~0.44 to ~0.62 on themselves.
     prior = 50.0
     w = bf / (bf + prior) if bf > 0 else 0.0
+    # K/9 stabilises faster than other rate stats (~70 BF) AND showed the worst
+    # compression in the May 2026 7-day backtest: top-quartile pitcher K bin
+    # under-projected by 0.75 K (5.87 proj vs 6.62 actual). Use a tighter K-only
+    # prior so power arms hold their K/9 more aggressively.
+    prior_k = 25.0
+    w_k = bf / (bf + prior_k) if bf > 0 else 0.0
 
     raw_k9 = (k * 9.0 / ip) if ip > 0 else LEAGUE_K9
     raw_bb9 = (bb * 9.0 / ip) if ip > 0 else LEAGUE_BB9
@@ -94,7 +100,7 @@ def pitcher_quality_index(stats: dict) -> dict:
     strike_pct = _safe_float(stats.get("strikePercentage"), 0.62) or 0.62
 
     return {
-        "k9":   w * raw_k9 + (1 - w) * LEAGUE_K9,
+        "k9":   w_k * raw_k9 + (1 - w_k) * LEAGUE_K9,
         "bb9":  w * raw_bb9 + (1 - w) * LEAGUE_BB9,
         "whip": w * raw_whip + (1 - w) * LEAGUE_WHIP,
         "era":  w * raw_era + (1 - w) * LEAGUE_RPG,
