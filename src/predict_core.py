@@ -244,14 +244,25 @@ def predict_slate(target_date: date | str | None = None,
         )
 
         # Build player projections
-        for side, tid, otid, sp_id_self, sp_id_opp, team_pred, opp_pred, lineup_ids in [
-            ("away", f.away_team_id, f.home_team_id, f.away_sp_id, f.home_sp_id, away_pred, home_pred, away_lineup_ids),
-            ("home", f.home_team_id, f.away_team_id, f.home_sp_id, f.away_sp_id, home_pred, away_pred, home_lineup_ids),
+        for side, tid, otid, sp_id_self, sp_id_opp, team_pred, opp_pred, lineup_ids, opp_lineup_ids in [
+            ("away", f.away_team_id, f.home_team_id, f.away_sp_id, f.home_sp_id, away_pred, home_pred, away_lineup_ids, home_lineup_ids),
+            ("home", f.home_team_id, f.away_team_id, f.home_sp_id, f.away_sp_id, home_pred, away_pred, home_lineup_ids, away_lineup_ids),
         ]:
             opp_sp_q = feats.pitcher_quality_index(pitcher_stats.get(sp_id_opp, {})) if sp_id_opp else feats.pitcher_quality_index({})
             opp_off_idx = feats.team_offense_index(team_off.get(otid, {}))
             wadj = {"runs_mult": f.runs_mult, "hr_mult": f.hr_mult,
                     "wind_to_cf_mph": f.wind_to_cf_mph, "temp_f": f.temp_f}
+
+            # Lineup-specific K% for pitcher K projection.
+            # When the opposing lineup is confirmed, blend 65% lineup K% with
+            # 35% team season K% — lineup K% better reflects today's actual
+            # batters (e.g. rest days, bench players). Falls back to team K%
+            # when lineup isn't posted yet.
+            if opp_lineup_ids:
+                lk = proj.lineup_k_pct(opp_lineup_ids, batter_stats)
+                team_k = opp_off_idx.get("k_pct", 0.225)
+                opp_off_idx = dict(opp_off_idx)
+                opp_off_idx["k_pct"] = 0.65 * lk + 0.35 * team_k
 
             batters_out = []
             order = 1
@@ -327,6 +338,12 @@ def predict_slate(target_date: date | str | None = None,
                     team_id = f.home_team_id if is_home_pitcher else f.away_team_id
                     opp_id = f.away_team_id if is_home_pitcher else f.home_team_id
                     opp_off = feats.team_offense_index(team_off.get(opp_id, {}))
+                    # Use confirmed opposing lineup K% if available
+                    _opp_lineup = away_lineup_ids if is_home_pitcher else home_lineup_ids
+                    if _opp_lineup:
+                        _lk = proj.lineup_k_pct(_opp_lineup, batter_stats)
+                        opp_off = dict(opp_off)
+                        opp_off["k_pct"] = 0.65 * _lk + 0.35 * opp_off.get("k_pct", 0.225)
                     opp_pred = away_pred if is_home_pitcher else home_pred
                     pproj = proj.project_pitcher(pdata, team_id, opp_off, opp_pred, park,
                                                  {"runs_mult": f.runs_mult, "hr_mult": f.hr_mult},

@@ -89,6 +89,41 @@ def get_likely_batters(team_id: int, batter_stats: dict[int, dict],
     return pool[:max_n]
 
 
+# ---------- Lineup K% ----------
+def lineup_k_pct(
+    lineup_ids: list[int] | None,
+    batter_stats: dict[int, dict],
+    fallback: float = LG["k_pct"],
+) -> float:
+    """Return the EB-shrunk K% for a specific confirmed lineup.
+
+    Uses individual batter K rates rather than season team K%, capturing
+    bench player substitutions and rest-day lineups.  Falls back to league
+    average when no lineup data is available.
+
+    blend_weight controls how much the result should be trusted vs the team
+    season K% (handled by the caller — returned raw here).
+    """
+    if not lineup_ids:
+        return fallback
+
+    rates = []
+    for pid in lineup_ids:
+        s = batter_stats.get(int(pid)) or batter_stats.get(str(pid))
+        if not s:
+            rates.append(fallback)
+            continue
+        pa = _safe(s.get("plateAppearances"))
+        k  = _safe(s.get("strikeOuts"))
+        if pa < 5:
+            rates.append(fallback)
+            continue
+        raw = k / pa
+        rates.append(_shrink(raw, LG["k_pct"], pa, PRIOR_PA))
+
+    return sum(rates) / len(rates) if rates else fallback
+
+
 # ---------- Per-batter projection ----------
 @dataclass
 class BatterProjection:
