@@ -460,14 +460,17 @@ def evaluate_prop(name: str, market: str, mean_proj: float, line: float,
                     kelly=kelly_fraction(mp, d),
                 )))
     elif over_odds is not None:
-        # One-sided: estimate no-vig prob = implied - juice/2
+        # One-sided: estimate no-vig prob = implied - juice/2. The no-vig
+        # estimate is rough (Bovada batter props carry 6-12% overround on
+        # binary markets). We label the description so users know.
         imp = american_to_prob(over_odds)
         novig = max(0.01, min(0.99, imp - one_sided_juice / 2.0))
         edge = p_over - novig
         if edge >= edge_threshold:
             d = american_to_decimal(over_odds)
             out.append(annotate(ValueBet(
-                market=f"prop_{market}", description=f"{name} {market} OVER {line}",
+                market=f"prop_{market}",
+                description=f"{name} {market} OVER {line} [1-sided, ~{int(one_sided_juice*100)}% juice est.]",
                 line=line, odds=over_odds, decimal_odds=d,
                 model_prob=p_over, novig_prob=novig,
                 edge_pct=edge * 100,

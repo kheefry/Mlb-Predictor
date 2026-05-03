@@ -283,12 +283,14 @@ def resolve_platoon(
         split = bat_vs_r.get(pid_int) or bat_vs_r.get(str(pid_int))
     else:
         split = None
-    return {"bat_side": bat_side, "opp_pit_throws": p_throws, "bat_split": split}
+    return {"bat_side": bat_side, "opp_pit_throws": p_throws, "bat_split": split,
+            "is_switch": raw_side == "S"}
 
 
 def _platoon_multipliers(bat_side: str | None, pit_throws: str | None,
                          bat_split: dict | None,
-                         bat_overall: dict) -> dict:
+                         bat_overall: dict,
+                         is_switch: bool = False) -> dict:
     """Return multiplicative adjustments for K%, BB%, HR%, AVG based on the
     matchup's split data.
 
@@ -298,13 +300,21 @@ def _platoon_multipliers(bat_side: str | None, pit_throws: str | None,
 
     bat_side is the side they bat from FOR THIS AT-BAT (a switch hitter
     facing a RHP bats lefty -> "L"). pit_throws is 'L' or 'R'.
+
+    is_switch: when True, apply stricter requirements — switch hitters split
+    their PA across two stances so each half-sample is smaller. We raise the
+    minimum PA to 60 (vs 30 for handed batters) and use a heavier shrinkage
+    prior (200 vs 130) so early-season noise doesn't dominate.
     """
     out = {"k": 1.0, "bb": 1.0, "hr": 1.0, "avg": 1.0}
     if not bat_split or not pit_throws:
         return out
 
+    min_pa = 60 if is_switch else 30
+    shrink_prior = 200.0 if is_switch else 130.0
+
     pa_split = _safe(bat_split.get("plateAppearances"))
-    if pa_split < 30:           # too small to be informative
+    if pa_split < min_pa:       # too small to be informative
         return out
 
     pa_overall = _safe(bat_overall.get("plateAppearances"), 1.0) or 1.0
@@ -325,9 +335,8 @@ def _platoon_multipliers(bat_side: str | None, pit_throws: str | None,
         "avg": (_safe(bat_overall.get("hits")) / ab_overall) if ab_overall else 0.245,
     }
 
-    # Shrink the ratio toward 1.0 by sample size. At PA=200 we use 0.6 weight on
-    # the ratio; at PA=30 we use 0.13. This caps platoon sample noise.
-    w = pa_split / (pa_split + 130.0)
+    # Shrink the ratio toward 1.0 by sample size.
+    w = pa_split / (pa_split + shrink_prior)
     for k, vsplit in rates_split.items():
         voverall = rates_overall[k] or 0.001
         ratio = vsplit / voverall
@@ -350,6 +359,7 @@ def project_batter(
     bat_side: str | None = None,
     opp_pit_throws: str | None = None,
     bat_split: dict | None = None,
+    is_switch: bool = False,
 ) -> BatterProjection:
     """Empirical-Bayes shrunk rates × expected PA × matchup multipliers.
 
@@ -426,7 +436,8 @@ def project_batter(
     # Platoon adjustment: for switch hitters, batting side flips relative to
     # opposing pitcher. We expose `bat_side` already resolved by the caller
     # (predict.py / backtest.py / train_props.py).
-    plat = _platoon_multipliers(bat_side, opp_pit_throws, bat_split, bat_stats)
+    plat = _platoon_multipliers(bat_side, opp_pit_throws, bat_split, bat_stats,
+                                is_switch=is_switch)
     k_mult  *= plat["k"]
     bb_mult *= plat["bb"]
     hr_mult_pitch *= plat["hr"]

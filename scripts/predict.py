@@ -176,7 +176,8 @@ def main():
                                         recent_stats=rs,
                                         bat_side=pl["bat_side"],
                                         opp_pit_throws=pl["opp_pit_throws"],
-                                        bat_split=pl["bat_split"])
+                                        bat_split=pl["bat_split"],
+                                        is_switch=pl.get("is_switch", False))
                 batter_projs.append(p)
                 print(f"    {p.name[:24]:24s} {p.expected_pa:.1f}  {p.proj_h:.2f} {p.proj_hr:.2f}"
                       f"  {p.proj_tb:.2f} {p.proj_rbi:.2f} {p.proj_runs:.2f} {p.proj_k:.2f} {p.proj_bb:.2f}")

@@ -286,7 +286,8 @@ def predict_slate(target_date: date | str | None = None,
                                         recent_stats=rs,
                                         bat_side=pl["bat_side"],
                                         opp_pit_throws=pl["opp_pit_throws"],
-                                        bat_split=pl["bat_split"])
+                                        bat_split=pl["bat_split"],
+                                        is_switch=pl.get("is_switch", False))
                 batters_out.append(asdict(p))
                 order += 1
 
@@ -385,7 +386,8 @@ def predict_slate(target_date: date | str | None = None,
                                                 recent_stats=rs,
                                                 bat_side=pl["bat_side"],
                                                 opp_pit_throws=pl["opp_pit_throws"],
-                                                bat_split=pl["bat_split"])
+                                                bat_split=pl["bat_split"],
+                                                is_switch=pl.get("is_switch", False))
                     means = {
                         "hr": bproj.proj_hr, "hits": bproj.proj_h, "tb": bproj.proj_tb,
                         "rbi": bproj.proj_rbi, "runs": bproj.proj_runs, "k": bproj.proj_k,

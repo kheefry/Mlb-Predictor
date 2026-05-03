@@ -177,6 +177,7 @@ def main():
                     bat_side=pl["bat_side"],
                     opp_pit_throws=pl["opp_pit_throws"],
                     bat_split=pl["bat_split"],
+                    is_switch=pl.get("is_switch", False),
                 )
                 feat_row = prop_models.batter_feature_row(bproj, bs, rs, opp_sp_q, park, wadj, team_pred,
                                                           sc_stats=sc_bat.get(pid))

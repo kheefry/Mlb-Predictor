@@ -319,6 +319,14 @@ with main_tab_value:
         ("Game Lines",  ["moneyline", "total", "run_line"]),
     ]
 
+    st.info(
+        ":information_source: **Edges are vs Bovada lines.** "
+        "Bovada's juice is wider than US books (DraftKings, FanDuel, BetMGM). "
+        "A 5–6% edge vs Bovada may shrink to 1–3% or disappear at sharper books — "
+        "verify the price before betting. One-sided props are labelled "
+        "`[1-sided, ~6% juice est.]` to flag extra uncertainty in the no-vig estimate."
+    )
+
     if not slate.top_value and not _all_bets:
         st.info("No value bets exceed the edge threshold. Lower the slider on the left to see more.")
     else:

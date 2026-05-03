@@ -117,7 +117,8 @@ def backtest_players(
                                         recent_stats=rs,
                                         bat_side=pl["bat_side"],
                                         opp_pit_throws=pl["opp_pit_throws"],
-                                        bat_split=pl["bat_split"])
+                                        bat_split=pl["bat_split"],
+                                        is_switch=pl.get("is_switch", False))
                 bat_records.append({
                     "game_pk": gpk, "date": g["date"], "side": side, "team_id": tid,
                     "player_id": p.player_id, "name": p.name,
