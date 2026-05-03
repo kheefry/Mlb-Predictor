@@ -30,6 +30,60 @@ st.set_page_config(
     page_title="MLB Predictor",
     page_icon=":baseball:",
     layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# ---------- Custom CSS ----------
+st.markdown(
+    """
+    <style>
+    /* Tighten the main container padding */
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; max-width: 1400px; }
+
+    /* Cleaner tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        border-bottom: 2px solid rgba(120, 120, 120, 0.15);
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 10px 16px;
+        border-radius: 6px 6px 0 0;
+        font-weight: 500;
+    }
+    .stTabs [aria-selected="true"] {
+        background: rgba(255, 99, 71, 0.10);
+        color: #ff6347 !important;
+    }
+
+    /* Metric card refinement */
+    [data-testid="stMetricValue"] { font-size: 1.6rem; font-weight: 600; }
+    [data-testid="stMetricLabel"] { font-size: 0.85rem; opacity: 0.75; }
+
+    /* Pick card — prominent top panel */
+    .pick-card {
+        background: linear-gradient(135deg, rgba(255,99,71,0.08), rgba(255,99,71,0.02));
+        border: 1px solid rgba(255,99,71,0.20);
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 8px;
+    }
+    .pick-bet { font-weight: 600; font-size: 0.95rem; }
+    .pick-meta { opacity: 0.75; font-size: 0.85rem; }
+    .pick-edge { color: #2ea043; font-weight: 600; font-size: 1.1rem; }
+
+    /* Reduce vertical padding inside expanders */
+    [data-testid="stExpander"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+
+    /* Subtle dividers */
+    hr { margin: 1rem 0; opacity: 0.4; }
+
+    /* Hide the top-right "fork on github" Streamlit footer noise */
+    footer { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -207,24 +261,34 @@ def run_prediction(target_iso: str, edge: float, fetch_odds: bool):
 # ---------- Sidebar controls ----------
 with st.sidebar:
     st.title(":baseball: MLB Predictor")
-    st.caption("Live model + Bovada lines • free, no API key required")
+    st.caption("Live model + Bovada lines · free, no API key required")
 
+    st.divider()
+
+    # ----- Slate selection -----
+    st.markdown("**:date: Slate**")
     today = datetime.now(timezone.utc).date()
     selected_date = st.date_input(
         "Game date",
         value=today,
         min_value=today - timedelta(days=14),
         max_value=today + timedelta(days=14),
+        label_visibility="collapsed",
     )
+    fetch_odds = st.checkbox("Pull live odds (Bovada)", value=True)
+
+    st.divider()
+
+    # ----- Filters -----
+    st.markdown("**:control_knobs: Filters**")
     edge_threshold = st.slider(
-        "Min edge to flag",
+        "Minimum edge",
         min_value=0.01, max_value=0.20, value=0.04, step=0.01,
         format="%.2f",
         help="Only show bets where model probability beats no-vig market by at least this much.",
     )
-    fetch_odds = st.checkbox("Pull live odds (Bovada)", value=True)
     ranking_mode = st.radio(
-        "Rank leaderboard by",
+        "Rank by",
         ["Score", "EV / $"],
         horizontal=True,
         help=(
@@ -232,20 +296,33 @@ with st.sidebar:
             "**EV / $** = expected profit per dollar wagered (raw model value)."
         ),
     )
-    if st.button(":arrows_counterclockwise: Refresh"):
-        run_prediction.clear()
-        proj.reload_prop_models()
 
     st.divider()
+
+    # ----- Actions -----
+    if st.button(":arrows_counterclockwise: Refresh data", use_container_width=True):
+        run_prediction.clear()
+        proj.reload_prop_models()
+        st.rerun()
+
     st.caption(
-        "Built on the MLB Stats API, Open-Meteo, and Bovada's open JSON feed. "
-        "Backtested on 2026 season-to-date games."
+        ":information_source: MLB Stats API · Open-Meteo · Bovada · Baseball Savant. "
+        "Edges are vs Bovada — expect haircut at sharper books."
     )
 
 
 # ---------- Header ----------
-st.title("MLB Slate")
-st.caption(f"Predictions for **{selected_date.isoformat()}**")
+_date_label = selected_date.strftime("%A, %B %-d, %Y") if hasattr(selected_date, "strftime") else selected_date.isoformat()
+try:
+    _date_label = selected_date.strftime("%A, %B %d, %Y").replace(" 0", " ")
+except Exception:
+    _date_label = selected_date.isoformat()
+
+_h_left, _h_right = st.columns([3, 1])
+with _h_left:
+    st.markdown(f"## :baseball: MLB Slate — {_date_label}")
+with _h_right:
+    st.caption("&nbsp;")  # spacer
 
 with st.spinner("Pulling slate, weather, lines, projections..."):
     try:
@@ -263,31 +340,76 @@ if slate.n_games == 0:
 
 
 # ---------- Top metrics ----------
-m1, m2, m3, m4 = st.columns(4)
+m1, m2, m3, m4, m5 = st.columns(5)
 m1.metric("Games", slate.n_games)
 m2.metric("Books loaded", slate.n_books)
-m3.metric("Player props", slate.n_props_loaded)
-m4.metric("Top value bets", len(slate.top_value))
+m3.metric("Props", slate.n_props_loaded)
+m4.metric("Value bets", len(slate.top_value))
+_avg_edge = (
+    sum(b.get("edge_pct", 0) for b in slate.top_value) / max(1, len(slate.top_value))
+    if slate.top_value else 0.0
+)
+m5.metric("Avg edge", f"+{_avg_edge:.1f}%" if _avg_edge else "—")
 
+_status_bits = []
 if slate.odds_source != "none":
-    st.caption(f"Odds source: **{slate.odds_source}**")
+    _status_bits.append(f"Odds: **{slate.odds_source}**")
+_status_bits.append(f"Edge ≥ **{edge_threshold:.0%}**")
+_status_bits.append(f"Ranking: **{ranking_mode}**")
+st.caption(" · ".join(_status_bits))
 
 if slate.concentration_warning:
     st.warning(":warning: " + slate.concentration_warning)
 
 
-# ---------- Main tabs ----------
+# ---------- Today's Top 5 panel ----------
 sort_key = "score" if ranking_mode == "Score" else "ev_per_dollar"
 _sort_col = "Score" if sort_key == "score" else "EV/$"
 
+_top5 = sorted(slate.top_value, key=lambda x: -x.get(sort_key, 0))[:5]
+if _top5:
+    st.markdown("### :star: Top 5 picks")
+    _cols = st.columns(min(5, len(_top5)))
+    for col, vb in zip(_cols, _top5):
+        with col:
+            _bet = vb["description"]
+            # Trim noisy juice tags from card display
+            _bet_short = _bet.replace(" [1-sided, ~6% juice est.]", "")
+            if len(_bet_short) > 38:
+                _bet_short = _bet_short[:35] + "…"
+            _odds = _amer(vb["odds"])
+            _edge = vb.get("edge_pct", 0)
+            _kelly = (vb.get("kelly", 0) or 0) * 100
+            _model_p = (vb.get("model_prob", 0) or 0) * 100
+            st.markdown(
+                f"""<div class="pick-card">
+                <div class="pick-bet">{_bet_short}</div>
+                <div class="pick-meta">{_odds} · model {_model_p:.0f}%</div>
+                <div class="pick-edge">+{_edge:.1f}% edge</div>
+                <div class="pick-meta">Kelly {_kelly:.1f}%</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+    st.write("")  # spacer
+
+
+# ---------- Main tabs ----------
 _all_bets: list[dict] = []
 for _gp in slate.games:
     _all_bets.extend(_gp.game_value)
     _all_bets.extend(_gp.prop_value)
 
-main_tab_value, main_tab_intervals, main_tab_p1, main_tab_games, main_tab_track = st.tabs(
-    ["Value Bets", "Intervals", "P(≥1) Confidence", "Games", "Track Record"]
-)
+# Tab labels with badge counts
+_n_value  = len(slate.top_value)
+_n_games  = slate.n_games
+
+main_tab_value, main_tab_intervals, main_tab_p1, main_tab_games, main_tab_track = st.tabs([
+    f":moneybag: Value Bets ({_n_value})",
+    ":bar_chart: Intervals",
+    ":dart: P(≥1) Confidence",
+    f":baseball: Games ({_n_games})",
+    ":trophy: Track Record",
+])
 
 
 # ===== TAB 1 — Value Bets leaderboard =====
@@ -306,10 +428,10 @@ with main_tab_value:
     MARKET_TABS = [
         ("Overall",        None),
         ("Confidence",     "__confidence__"),
-        ("Pure Confidence","__pure_confidence__"),
+        ("Pure Conf.",     "__pure_confidence__"),
         ("HR",          ["prop_hr"]),
         ("Hits",        ["prop_hits"]),
-        ("Total Bases", ["prop_tb"]),
+        ("TB",          ["prop_tb"]),
         ("RBI",         ["prop_rbi"]),
         ("Runs",        ["prop_runs"]),
         ("Batter K",    ["prop_k"]),
@@ -319,18 +441,34 @@ with main_tab_value:
         ("Game Lines",  ["moneyline", "total", "run_line"]),
     ]
 
-    st.info(
-        ":information_source: **Edges are vs Bovada lines.** "
-        "Bovada's juice is wider than US books (DraftKings, FanDuel, BetMGM). "
-        "A 5–6% edge vs Bovada may shrink to 1–3% or disappear at sharper books — "
-        "verify the price before betting. One-sided props are labelled "
-        "`[1-sided, ~6% juice est.]` to flag extra uncertainty in the no-vig estimate."
-    )
+    # Compute counts per market tab for badge labels
+    _market_pool_for_counts = getattr(slate, "all_bets", []) or _all_bets
+    _filtered_pool = [b for b in _market_pool_for_counts if b.get("edge_pct", 0) >= edge_threshold * 100]
+    def _tab_count(markets) -> int:
+        if markets is None:
+            return min(40, len(slate.top_value))
+        if markets == "__confidence__":
+            return min(20, len(_all_bets))
+        if markets == "__pure_confidence__":
+            return min(20, len(_market_pool_for_counts))
+        return min(20, len([b for b in _filtered_pool if b.get("market") in markets]))
+
+    _tab_labels = [f"{lab} ({_tab_count(mk)})" for lab, mk in MARKET_TABS]
+
+    with st.expander(":information_source: About these edges (vs Bovada — read once)", expanded=False):
+        st.markdown(
+            "- **Edges are vs Bovada lines.** Bovada's juice is wider than DK/FD/BetMGM. "
+            "A 5–6% edge vs Bovada may shrink to 1–3% or disappear at sharper books.\n"
+            "- One-sided props (Bovada Yes/No) are labelled `[1-sided, ~6% juice est.]` — the no-vig "
+            "estimate is rough at extreme odds. Treat +500 longshots with caution.\n"
+            "- **Score** = (edge / √(p·(1−p))) × stat-reliability — Sharpe-like ranking. "
+            "**EV / $** = expected profit per dollar — raw model value."
+        )
 
     if not slate.top_value and not _all_bets:
-        st.info("No value bets exceed the edge threshold. Lower the slider on the left to see more.")
+        st.info(":mag: No value bets exceed the edge threshold. Lower the **Minimum edge** slider in the sidebar to see more.")
     else:
-        tabs = st.tabs([t[0] for t in MARKET_TABS])
+        tabs = st.tabs(_tab_labels)
         for tab, (label, markets) in zip(tabs, MARKET_TABS):
             with tab:
                 if markets is None:
@@ -382,17 +520,32 @@ with main_tab_value:
                 _sort_for_tab = "Confidence" if is_confidence_tab else _sort_col
                 df_lb = pd.DataFrame(_df_cols).sort_values(_sort_for_tab, ascending=False)
 
+                # Color-code Edge% column: deeper green = bigger edge
+                def _edge_style(v):
+                    if pd.isna(v):
+                        return ""
+                    if v >= 15:
+                        return "background-color: rgba(46,160,67,0.45); color: white; font-weight: 600;"
+                    if v >= 10:
+                        return "background-color: rgba(46,160,67,0.30); font-weight: 600;"
+                    if v >= 5:
+                        return "background-color: rgba(46,160,67,0.15);"
+                    if v < 0:
+                        return "color: #ff6347;"
+                    return ""
+
+                _styled = df_lb.style.applymap(_edge_style, subset=["Edge%"]).format({
+                    "Model%":     "{:.1f}%",
+                    "No-vig%":    "{:.1f}%",
+                    "Edge%":      "+{:.1f}%",
+                    "Confidence": "{:.3f}",
+                    "Score":      "{:.2f}",
+                    "EV/$":       "{:+.3f}",
+                    "Kelly%":     "{:.2f}%",
+                })
+
                 st.dataframe(
-                    df_lb,
-                    column_config={
-                        "Model%":     st.column_config.NumberColumn("Model%",     format="%.1f%%"),
-                        "No-vig%":    st.column_config.NumberColumn("No-vig%",    format="%.1f%%"),
-                        "Edge%":      st.column_config.NumberColumn("Edge%",      format="+%.1f%%"),
-                        "Confidence": st.column_config.NumberColumn("Confidence", format="%.3f"),
-                        "Score":      st.column_config.NumberColumn("Score",      format="%.2f"),
-                        "EV/$":       st.column_config.NumberColumn("EV/$",       format="+%.3f"),
-                        "Kelly%":     st.column_config.NumberColumn("Kelly%",     format="%.2f%%"),
-                    },
+                    _styled,
                     use_container_width=True, hide_index=True,
                     height=min(500, 38 * len(df_lb) + 38),
                 )
