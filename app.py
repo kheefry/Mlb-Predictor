@@ -534,7 +534,11 @@ with main_tab_value:
                         return "color: #ff6347;"
                     return ""
 
-                _styled = df_lb.style.applymap(_edge_style, subset=["Edge%"]).format({
+                # Styler.applymap was renamed to Styler.map in pandas 2.1; use
+                # whichever exists to stay portable across local & Streamlit Cloud.
+                _styler = df_lb.style
+                _style_fn = getattr(_styler, "map", None) or _styler.applymap
+                _styled = _style_fn(_edge_style, subset=["Edge%"]).format({
                     "Model%":     "{:.1f}%",
                     "No-vig%":    "{:.1f}%",
                     "Edge%":      "+{:.1f}%",
