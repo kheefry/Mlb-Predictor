@@ -288,8 +288,13 @@ def _train_one(df: pd.DataFrame, target_col: str, feature_cols: list[str],
         ybl       = blend[target_col].values
         ml_bl     = np.clip(m.predict(blend[feature_cols].values), 0, None)
         anal_bl   = blend[anal_col].values
+        # Cap ML blend weight at 0.70. The GBT minimises MAE by regressing
+        # projections toward the mean, which hurts top-bin calibration —
+        # May 2026 backtest had pitcher K bin-4 under-projecting by 1.09 K
+        # at blend_weight=0.90. Anchoring against the analytical ensures the
+        # extreme bins keep their spread, even at small MAE cost.
         best_w, best_m = 0.5, float("inf")
-        for w in np.linspace(0.0, 1.0, 21):
+        for w in np.linspace(0.0, 0.70, 15):
             mae_w = float(np.mean(np.abs(w * ml_bl + (1 - w) * anal_bl - ybl)))
             if mae_w < best_m:
                 best_w, best_m = float(w), mae_w

@@ -23,6 +23,7 @@ import pandas as pd
 from . import features as feats
 from . import model as mdl
 from . import parks, projections as proj
+from . import statcast as sc
 
 
 def load_snapshot(path: Path) -> dict:
@@ -55,6 +56,12 @@ def backtest_players(
     bat_vs_r = _stats_lookup(snap.get("bat_vs_r", {}))
     bat_sides = {int(k): v for k, v in snap.get("bat_sides", {}).items()}
     pit_throws = {int(k): v for k, v in snap.get("pit_throws", {}).items()}
+
+    # Per-batter Statcast for the barrel-rate HR prior. Match production path.
+    try:
+        sc_bat_data = sc.get_batter_stats(2026)
+    except Exception:
+        sc_bat_data = {}
 
     final = games[games["is_final"] == True].sort_values("date")
     cutoff_dates = sorted(final["date"].unique())
@@ -118,7 +125,8 @@ def backtest_players(
                                         bat_side=pl["bat_side"],
                                         opp_pit_throws=pl["opp_pit_throws"],
                                         bat_split=pl["bat_split"],
-                                        is_switch=pl.get("is_switch", False))
+                                        is_switch=pl.get("is_switch", False),
+                                        sc_stats=sc_bat_data.get(pid))
                 bat_records.append({
                     "game_pk": gpk, "date": g["date"], "side": side, "team_id": tid,
                     "player_id": p.player_id, "name": p.name,

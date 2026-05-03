@@ -529,12 +529,17 @@ def _expected_outs(pq: dict, opp_off_rpg: float) -> float:
     """
     bf = pq.get("bf", 0)
     if bf < 30:        # rookie / minimal data — assume below-average outing
-        return 13.5
+        return 12.0    # tightened from 13.5 (May 2026 calibration: bin-1
+                       # over-projects outs by 1.4 — short-leash starters get
+                       # pulled even earlier than projected).
     fip = pq.get("fip", 4.10)
     base_outs = 15.5 - (fip - 4.0) * 2.2     # FIP 3.0 -> ~17.7 outs, FIP 5.0 -> ~13.3
     base_outs -= max(0.0, opp_off_rpg - 4.5) * 0.7
-    # Early-season pitch-count caps: starters with low BF count have shorter leashes
-    if bf < 80:
+    # Early-season pitch-count caps: tiered by BF bucket. Backtest bin-1
+    # (mean_proj 14.2 vs actual 12.83) confirmed even bf < 80 was too lenient.
+    if bf < 50:
+        base_outs -= 2.0
+    elif bf < 80:
         base_outs -= 1.0
     return max(8.0, min(21.0, base_outs))
 
