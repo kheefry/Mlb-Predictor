@@ -399,6 +399,15 @@ def predict_slate(target_date: date | str | None = None,
                 vbs_all = value.evaluate_prop(name, pp["market"], mean, pp["line"],
                                               pp.get("over"), pp.get("under"),
                                               edge_threshold=-1.0)
+                # Short-start guard: drop pitcher counting-stat OVERs when we
+                # project < 4.5 IP (13.5 outs). Quick-hook starts — rookies on
+                # pitch counts, openers, struggling vets — can collapse an
+                # OVER pick to zero. The projection's NegBin distribution
+                # doesn't capture this discrete-event risk well. May 2 example:
+                # Lowder was a top-confidence OVER 4.5 K pick that went 1 K on
+                # a quick pull. UNDERs are unaffected (a short start helps them).
+                if is_pitcher and vbs_all and pproj.expected_outs < 13.5:
+                    vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
                 if vbs_all:
                     _pid = int(pdata.get("player_id") or 0)
                     for vb in vbs_all:
