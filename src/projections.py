@@ -553,12 +553,13 @@ def project_pitcher(
     weather_adj: dict,
     recent_stats: dict | None = None,
     ml_blend: float | None = None,
+    sc_stats: dict | None = None,
 ) -> PitcherProjection:
     pid = int(pit_stats.get("player_id") or pit_stats.get("id") or 0)
     name = pit_stats.get("name") or pit_stats.get("fullName", "")
 
     from .features import pitcher_quality_index
-    pq = pitcher_quality_index(pit_stats)
+    pq = pitcher_quality_index(pit_stats, sc_stats=sc_stats)
     # If we have meaningful recent BF (last 14d), blend recent pitcher quality
     # with season — captures velocity drops, command issues, hot K streaks.
     if recent_stats:

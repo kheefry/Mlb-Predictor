@@ -47,7 +47,7 @@ def _ip_to_outs(ip_str) -> float:
     return int(s) * 3
 
 
-def pitcher_quality_index(stats: dict) -> dict:
+def pitcher_quality_index(stats: dict, sc_stats: dict | None = None) -> dict:
     """Normalize a pitcher's season stats into a small set of ratios.
 
     Uses Bayesian shrinkage toward the league mean — early-season noise gets
@@ -57,6 +57,13 @@ def pitcher_quality_index(stats: dict) -> dict:
 
     Pulls advanced metrics directly from the API saber endpoint when present:
     xFIP (more predictive than FIP), FIP- (park-adjusted), strikePercentage.
+
+    sc_stats: optional Statcast pitcher stats (whiff_pct, k_pct). When whiff%
+    is available, the K/9 shrinkage anchor is replaced with a whiff-derived
+    K/9 prior — whiff% stabilises ~30 BF (vs ~70 for K%), so a high-whiff
+    pitcher with low BF gets pulled toward "elite K/9" instead of league mean.
+    May 2026 calibration: top-quartile pitcher K under-projected by 0.85 K/start
+    on a flat LEAGUE_K9 prior.
     """
     bf = _safe_float(stats.get("battersFaced"), 0.0)
     outs = _ip_to_outs(stats.get("inningsPitched", 0))
@@ -79,6 +86,19 @@ def pitcher_quality_index(stats: dict) -> dict:
     prior_k = 25.0
     w_k = bf / (bf + prior_k) if bf > 0 else 0.0
 
+    # Whiff-anchored K/9 prior: when Statcast whiff_pct is available with
+    # enough sample (>= 30 BF), use it to compute the K/9 prior instead of
+    # LEAGUE_K9. Empirical relationship: K/9 ≈ whiff% × 0.35 (league 25%
+    # whiff → 8.75 K/9 ≈ LEAGUE_K9). High-whiff pitchers (35%+) get a
+    # ~12 K/9 prior, breaking the systematic compression toward league
+    # mean for elite K guys.
+    sc_bf = (sc_stats or {}).get("bf") or 0.0
+    sc_whiff = (sc_stats or {}).get("whiff_pct")
+    if sc_whiff is not None and sc_bf >= 30:
+        whiff_prior_k9 = max(4.0, min(15.0, float(sc_whiff) * 0.35))
+    else:
+        whiff_prior_k9 = LEAGUE_K9
+
     raw_k9 = (k * 9.0 / ip) if ip > 0 else LEAGUE_K9
     raw_bb9 = (bb * 9.0 / ip) if ip > 0 else LEAGUE_BB9
     raw_whip = ((bb + h) / ip) if ip > 0 else LEAGUE_WHIP
@@ -100,7 +120,7 @@ def pitcher_quality_index(stats: dict) -> dict:
     strike_pct = _safe_float(stats.get("strikePercentage"), 0.62) or 0.62
 
     return {
-        "k9":   w_k * raw_k9 + (1 - w_k) * LEAGUE_K9,
+        "k9":   w_k * raw_k9 + (1 - w_k) * whiff_prior_k9,
         "bb9":  w * raw_bb9 + (1 - w) * LEAGUE_BB9,
         "whip": w * raw_whip + (1 - w) * LEAGUE_WHIP,
         "era":  w * raw_era + (1 - w) * LEAGUE_RPG,

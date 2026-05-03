@@ -47,7 +47,7 @@ _PRIOR_BF_PIT  = 150    # ≈ 50 IP
 
 # Cache version suffix — bump when selections change so stale files are ignored
 _BAT_VER = "v2"
-_PIT_VER = "v2"
+_PIT_VER = "v3"   # bumped when whiff_percent added
 
 
 # ---------- Internals ----------
@@ -141,12 +141,14 @@ def get_pitcher_stats(year: int) -> dict[int, dict]:
     """Per-player Statcast pitching stats (contact quality allowed).
     Keys are MLB player_id ints.
 
-    Returns: xera, xwoba (against), barrel_pct (allowed), pa (≈ batters faced).
+    Returns: xera, xwoba (against), barrel_pct (allowed), whiff_percent
+    (% of swings that miss — stabilises ~30 BF, much faster than K%),
+    k_percent, pa (≈ batters faced).
     Values are raw; apply EB shrinkage via shrunk_pitcher_sc().
     """
     df = _fetch_leaderboard(
         year, "pitcher",
-        "pa,xera,xwoba,barrel_batted_rate,hard_hit_percent",
+        "pa,xera,xwoba,barrel_batted_rate,hard_hit_percent,whiff_percent,k_percent",
         min_pa=10,
         cache_key=f"pitcher_{_PIT_VER}",
     )
@@ -160,6 +162,8 @@ def get_pitcher_stats(year: int) -> dict[int, dict]:
             "xwoba":      _safe(row.get("xwoba")),
             "barrel_pct": _safe(row.get("barrel_batted_rate")),
             "hard_hit":   _safe(row.get("hard_hit_percent")),
+            "whiff_pct":  _safe(row.get("whiff_percent")),
+            "k_pct":      _safe(row.get("k_percent")),
             "bf":         _safe(row.get("pa"), 0.0),   # Savant returns "pa" for pitchers too
         }
     return out

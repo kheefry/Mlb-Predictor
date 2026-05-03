@@ -95,13 +95,14 @@ def main():
         side = "home" if r["is_home"] == 1 else "away"
         pred_by_gs[(int(r["game_pk"]), side)] = float(r["pred_runs"])
 
-    print("Fetching Statcast batter stats (barrel%, hard-hit%) for prop features...")
+    print("Fetching Statcast batter + pitcher stats (barrel%, hard-hit%, whiff%)...")
     try:
         sc_bat = sc.get_batter_stats(2026)
-        print(f"  {len(sc_bat)} players with Statcast data")
+        sc_pit = sc.get_pitcher_stats(2026)
+        print(f"  {len(sc_bat)} batters, {len(sc_pit)} pitchers with Statcast data")
     except Exception as e:
         print(f"  WARNING: Statcast fetch failed ({e}), using league-average defaults")
-        sc_bat = {}
+        sc_bat, sc_pit = {}, {}
 
     print("Building feature rows for batters and starters...")
     bat_rows: list[dict] = []
@@ -147,7 +148,11 @@ def main():
             if team_pred is None or opp_pred is None:
                 continue
 
-            opp_sp_q   = feats.pitcher_quality_index(pit_stats.get(sp_opp, {})) if sp_opp else feats.pitcher_quality_index({})
+            opp_sp_q   = (
+                feats.pitcher_quality_index(pit_stats.get(sp_opp, {}),
+                                            sc_stats=sc_pit.get(sp_opp))
+                if sp_opp else feats.pitcher_quality_index({})
+            )
             opp_off_idx = feats.team_offense_index(team_off.get(otid, {}))
 
             actual_b = box[(box["game_pk"] == gpk) & (box["side"] == side) & (box["pa"] > 0)]
@@ -202,7 +207,8 @@ def main():
                 ps  = pit_stats.get(pid, {"player_id": pid, "name": prow["name"], "team_id": tid})
                 rs  = pit_recent.get(pid)
                 pproj = proj.project_pitcher(ps, tid, opp_off_idx, opp_pred, park, wadj,
-                                             recent_stats=rs, ml_blend=0)
+                                             recent_stats=rs, ml_blend=0,
+                                             sc_stats=sc_pit.get(pid))
                 feat_row = prop_models.pitcher_feature_row(pproj, ps, rs, opp_off_idx, park, wadj, opp_pred)
                 feat_row.update({
                     "game_pk": gpk, "date": gdate, "side": side,

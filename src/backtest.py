@@ -57,11 +57,12 @@ def backtest_players(
     bat_sides = {int(k): v for k, v in snap.get("bat_sides", {}).items()}
     pit_throws = {int(k): v for k, v in snap.get("pit_throws", {}).items()}
 
-    # Per-batter Statcast for the barrel-rate HR prior. Match production path.
+    # Per-player Statcast: barrel-rate HR prior + whiff%-anchored K/9 prior.
     try:
         sc_bat_data = sc.get_batter_stats(2026)
+        sc_pit_data = sc.get_pitcher_stats(2026)
     except Exception:
-        sc_bat_data = {}
+        sc_bat_data, sc_pit_data = {}, {}
 
     final = games[games["is_final"] == True].sort_values("date")
     cutoff_dates = sorted(final["date"].unique())
@@ -107,7 +108,11 @@ def backtest_players(
             if team_pred is None or opp_pred is None:
                 continue
 
-            opp_sp_q = feats.pitcher_quality_index(pitcher_stats.get(opp_sp_id, {})) if opp_sp_id else feats.pitcher_quality_index({})
+            opp_sp_q = (
+                feats.pitcher_quality_index(pitcher_stats.get(opp_sp_id, {}),
+                                            sc_stats=sc_pit_data.get(opp_sp_id))
+                if opp_sp_id else feats.pitcher_quality_index({})
+            )
             opp_off_idx = feats.team_offense_index(team_off.get(otid, {}))
 
             # Use the actual lineup from the boxscore — batters who logged a PA
@@ -149,7 +154,8 @@ def backtest_players(
                 ps = pitcher_stats.get(pid, {"player_id": pid, "name": prow["name"], "team_id": tid})
                 rs = pitcher_recent.get(pid)
                 pp = proj.project_pitcher(ps, tid, opp_off_idx, opp_pred, park, wadj,
-                                          recent_stats=rs)
+                                          recent_stats=rs,
+                                          sc_stats=sc_pit_data.get(pid))
                 pit_records.append({
                     "game_pk": gpk, "date": g["date"], "side": side, "team_id": tid,
                     "player_id": pp.player_id, "name": pp.name,

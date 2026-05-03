@@ -260,7 +260,11 @@ def predict_slate(target_date: date | str | None = None,
             ("away", f.away_team_id, f.home_team_id, f.away_sp_id, f.home_sp_id, away_pred, home_pred, away_lineup_ids, home_lineup_ids),
             ("home", f.home_team_id, f.away_team_id, f.home_sp_id, f.away_sp_id, home_pred, away_pred, home_lineup_ids, away_lineup_ids),
         ]:
-            opp_sp_q = feats.pitcher_quality_index(pitcher_stats.get(sp_id_opp, {})) if sp_id_opp else feats.pitcher_quality_index({})
+            opp_sp_q = (
+                feats.pitcher_quality_index(pitcher_stats.get(sp_id_opp, {}),
+                                            sc_stats=sc_pit_data.get(sp_id_opp))
+                if sp_id_opp else feats.pitcher_quality_index({})
+            )
             opp_off_idx = feats.team_offense_index(team_off.get(otid, {}))
             wadj = {"runs_mult": f.runs_mult, "hr_mult": f.hr_mult,
                     "wind_to_cf_mph": f.wind_to_cf_mph, "temp_f": f.temp_f}
@@ -302,7 +306,8 @@ def predict_slate(target_date: date | str | None = None,
                 ps = pitcher_stats.get(sp_id_self, {"player_id": sp_id_self, "name": "?", "team_id": tid})
                 ps_recent = pit_recent.get(int(sp_id_self))
                 pp = proj.project_pitcher(ps, tid, opp_off_idx, opp_pred, park, wadj,
-                                          recent_stats=ps_recent)
+                                          recent_stats=ps_recent,
+                                          sc_stats=sc_pit_data.get(int(sp_id_self)))
                 if side == "away":
                     gp.away_starter = asdict(pp)
                 else:
@@ -365,9 +370,11 @@ def predict_slate(target_date: date | str | None = None,
                         opp_off = dict(opp_off)
                         opp_off["k_pct"] = proj.lineup_k_pct(_opp_lineup, batter_stats)
                     opp_pred = away_pred if is_home_pitcher else home_pred
+                    _pid = int(pdata.get("player_id") or 0)
                     pproj = proj.project_pitcher(pdata, team_id, opp_off, opp_pred, park,
                                                  {"runs_mult": f.runs_mult, "hr_mult": f.hr_mult},
-                                                 recent_stats=pit_recent.get(int(pdata.get("player_id") or 0)))
+                                                 recent_stats=pit_recent.get(_pid),
+                                                 sc_stats=sc_pit_data.get(_pid))
                     means = {
                         "pitcher_k": pproj.proj_k, "pitcher_outs": pproj.expected_outs,
                         "pitcher_er": pproj.proj_er, "pitcher_h": pproj.proj_h,
@@ -377,7 +384,11 @@ def predict_slate(target_date: date | str | None = None,
                 else:
                     is_home_batter = (pdata.get("team_id") == f.home_team_id)
                     sp_id = f.away_sp_id if is_home_batter else f.home_sp_id
-                    opp_sp_q = feats.pitcher_quality_index(pitcher_stats.get(sp_id, {})) if sp_id else feats.pitcher_quality_index({})
+                    opp_sp_q = (
+                        feats.pitcher_quality_index(pitcher_stats.get(sp_id, {}),
+                                                    sc_stats=sc_pit_data.get(sp_id))
+                        if sp_id else feats.pitcher_quality_index({})
+                    )
                     team_pred_local = home_pred if is_home_batter else away_pred
                     pid = int(pdata.get("player_id") or 0)
                     pl = proj.resolve_platoon(pid, sp_id, bat_sides, pit_throws, bat_vs_l, bat_vs_r)
