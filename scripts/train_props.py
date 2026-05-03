@@ -153,6 +153,19 @@ def main():
             actual_b = box[(box["game_pk"] == gpk) & (box["side"] == side) & (box["pa"] > 0)]
             actual_b = actual_b.sort_values("pa", ascending=False).head(9).reset_index(drop=True)
 
+            # For pitcher projections we need the OPPOSING lineup's K% (the
+            # nine batters this starter actually faced). Mirrors the live
+            # predict_core override so historical projections match the live
+            # distribution and the dispersion fit is honest.
+            other_side = "away" if side == "home" else "home"
+            opp_b = box[(box["game_pk"] == gpk) & (box["side"] == other_side) & (box["pa"] > 0)]
+            opp_b = opp_b.sort_values("pa", ascending=False).head(9)
+            opp_lineup_ids = [int(p) for p in opp_b["player_id"].tolist() if pd.notna(p)]
+            if opp_lineup_ids:
+                _lk = proj.lineup_k_pct(opp_lineup_ids, bat_stats)
+                opp_off_idx = dict(opp_off_idx)
+                opp_off_idx["k_pct"] = _lk
+
             for order_idx, row in actual_b.iterrows():
                 pid = int(row["player_id"])
                 bs  = bat_stats.get(pid, {"player_id": pid, "name": row["name"], "team_id": tid})

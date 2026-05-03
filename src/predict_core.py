@@ -351,12 +351,16 @@ def predict_slate(target_date: date | str | None = None,
                     team_id = f.home_team_id if is_home_pitcher else f.away_team_id
                     opp_id = f.away_team_id if is_home_pitcher else f.home_team_id
                     opp_off = feats.team_offense_index(team_off.get(opp_id, {}))
-                    # Use confirmed opposing lineup K% if available
+                    # Use the confirmed opposing lineup's K% directly when
+                    # available. lineup_k_pct already EB-shrinks each batter to
+                    # league at PRIOR_PA=30, so a second shrinkage to team K%
+                    # was double-dipping. Team K% additionally biases toward
+                    # the team's bench/IL pool, which is the wrong prior when
+                    # we know exactly who's hitting.
                     _opp_lineup = away_lineup_ids if is_home_pitcher else home_lineup_ids
                     if _opp_lineup:
-                        _lk = proj.lineup_k_pct(_opp_lineup, batter_stats)
                         opp_off = dict(opp_off)
-                        opp_off["k_pct"] = 0.65 * _lk + 0.35 * opp_off.get("k_pct", 0.225)
+                        opp_off["k_pct"] = proj.lineup_k_pct(_opp_lineup, batter_stats)
                     opp_pred = away_pred if is_home_pitcher else home_pred
                     pproj = proj.project_pitcher(pdata, team_id, opp_off, opp_pred, park,
                                                  {"runs_mult": f.runs_mult, "hr_mult": f.hr_mult},
