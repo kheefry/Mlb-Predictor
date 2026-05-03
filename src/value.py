@@ -62,13 +62,19 @@ CALIBRATION_SHRINK = 0.6
 
 
 def calibrate_prob(p: float) -> float:
-    """Shrink a raw model probability toward 0.5.
+    """Shrink a raw model probability toward 0.5 — only when p > 0.5.
 
-    p_cal = 0.5 + CALIBRATION_SHRINK * (p - 0.5)
+    p_cal = 0.5 + CALIBRATION_SHRINK * (p - 0.5)  if p > 0.5
+          = p                                      otherwise
 
-    Applied to every model probability before edge calculation. Display
-    probability and edge both reflect the calibrated value.
+    The shrinkage was calibrated against overconfidence at the HIGH end
+    (picks rated >=.65 winning only 33%). Applying it symmetrically to
+    low-prob tails inflates them — a raw 6% becomes a "calibrated" 24%,
+    manufacturing fake edges on +1200 longshots. Asymmetric shrink fixes
+    the overconfidence without touching the tails.
     """
+    if p <= 0.5:
+        return p
     return 0.5 + CALIBRATION_SHRINK * (p - 0.5)
 
 
