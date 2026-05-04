@@ -44,3 +44,6 @@ Thumbs.db
 .idea/
 *.swp
 .claude/settings.local.json
+_streamlit_check.log
+_*.py
+_*.log
