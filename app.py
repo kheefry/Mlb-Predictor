@@ -382,9 +382,13 @@ _sort_col = "Score" if sort_key == "score" else "EV/$"
 # Pitcher-confirmation: exclude bets from games where one or both starters
 # are TBD. Their pitcher projections fall back to defaults so any "edge" is
 # unreliable. Flagged games are listed in a separate warning below.
-_unconfirmed_games = sorted(
-    {f"{gp.away_team} @ {gp.home_team}" for gp in slate.games if not gp.starters_confirmed}
-)
+# getattr defends against stale pickles from older cached SlateResult
+# instances that don't have the field.
+_unconfirmed_games = sorted({
+    f"{gp.away_team} @ {gp.home_team}"
+    for gp in slate.games
+    if not getattr(gp, "starters_confirmed", True)
+})
 if _unconfirmed_games:
     st.warning(
         ":warning: **Starter not yet announced for "
