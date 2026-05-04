@@ -47,3 +47,4 @@ Thumbs.db
 _streamlit_check.log
 _*.py
 _*.log
+*.refit_backup
