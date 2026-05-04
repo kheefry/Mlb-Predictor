@@ -46,7 +46,7 @@ _PRIOR_PA_TEAM = 500    # ≈ 25 games × 20 PA/game
 _PRIOR_BF_PIT  = 150    # ≈ 50 IP
 
 # Cache version suffix — bump when selections change so stale files are ignored
-_BAT_VER = "v2"
+_BAT_VER = "v3"   # bumped when xba added
 _PIT_VER = "v3"   # bumped when whiff_percent added
 
 
@@ -113,12 +113,14 @@ def _fetch_leaderboard(year: int, player_type: str,
 def get_batter_stats(year: int) -> dict[int, dict]:
     """Per-player Statcast batting stats. Keys are MLB player_id ints.
 
-    Returns: xwoba, barrel_pct, hard_hit, pa.
-    Note: no team_id — use the MLB Stats API bat_stats for team membership.
+    Returns: xwoba, xba, barrel_pct, hard_hit, exit_velo, pa.
+    xba is expected batting average — strips BABIP variance from the AVG
+    signal, stabilises faster than raw AVG, and serves as a cleaner
+    prior anchor than the flat league mean (h_per_ab=0.245).
     """
     df = _fetch_leaderboard(
         year, "batter",
-        "pa,xwoba,barrel_batted_rate,hard_hit_percent,avg_exit_velocity",
+        "pa,xwoba,xba,barrel_batted_rate,hard_hit_percent,avg_exit_velocity",
         min_pa=10,
         cache_key=f"batter_{_BAT_VER}",
     )
@@ -129,6 +131,7 @@ def get_batter_stats(year: int) -> dict[int, dict]:
             continue
         out[int(pid)] = {
             "xwoba":      _safe(row.get("xwoba")),
+            "xba":        _safe(row.get("xba")),
             "barrel_pct": _safe(row.get("barrel_batted_rate")),
             "hard_hit":   _safe(row.get("hard_hit_percent")),
             "exit_velo":  _safe(row.get("avg_exit_velocity")),

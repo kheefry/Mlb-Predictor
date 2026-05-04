@@ -54,6 +54,10 @@ PRIOR_BF = 50.0
 # compression toward the mean. Loosening to 20 keeps elite K-rate hitters at
 # their own number more aggressively.
 PRIOR_PA_K = 20.0
+# Batting AVG: same compression problem on hits — top 5% under-projected by
+# 0.29 hits/game in the May holdout, bottom 20% over-projected by 0.12.
+# Loosening AVG shrinkage prior PA from 30 to 20 mirrors the K fix.
+PRIOR_PA_AVG = 20.0
 
 
 def _safe(x, default=0.0):
@@ -434,8 +438,24 @@ def project_batter(
     else:
         hr_prior = LG["hr_per_pa"]
 
-    # Shrink each rate toward league average by PA
-    avg = _shrink(raw_avg, LG["h_per_ab"], pa, PRIOR_PA)
+    # AVG prior: when Statcast xBA is available, shrink toward xBA instead
+    # of the flat league h_per_ab (0.245). xBA strips BABIP noise and
+    # stabilises faster than raw AVG, so it's a cleaner anchor for the
+    # shrinkage. A 0.190-xBA hitter shouldn't be pulled toward 0.245;
+    # a 0.310-xBA hitter shouldn't be pulled down. Fixes the bottom-quintile
+    # over-projection (+0.123 hits/game) and top-5% under-projection
+    # (-0.29 hits/game) seen in the May 2026 holdout.
+    if sc_stats and sc_stats.get("xba") is not None:
+        try:
+            avg_prior = max(0.180, min(0.350, float(sc_stats["xba"])))
+        except (TypeError, ValueError):
+            avg_prior = LG["h_per_ab"]
+    else:
+        avg_prior = LG["h_per_ab"]
+
+    # Shrink each rate toward league average by PA. AVG uses a tighter prior
+    # (PRIOR_PA_AVG=20) so elite hitters retain more of their own rate.
+    avg = _shrink(raw_avg, avg_prior, pa, PRIOR_PA_AVG)
     hr_pa = _shrink(raw_hr_pa, hr_prior, pa, PRIOR_PA)
     d_pa  = _shrink(raw_2b_pa, LG["double_per_ab"] * 0.93, pa, PRIOR_PA)
     t_pa  = _shrink(raw_3b_pa, LG["triple_per_ab"] * 0.93, pa, PRIOR_PA)
