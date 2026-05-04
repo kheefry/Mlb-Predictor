@@ -123,6 +123,28 @@ def _vb_to_dict(vb: value.ValueBet) -> dict:
     return d
 
 
+# Per-market minimum edge floors — noisy markets need a bigger edge to be
+# worth flagging. Based on May 2026 7-day backtest R^2:
+#   - prop_runs       R^2 = 0.034   -> need 7% edge
+#   - prop_rbi        R^2 = 0.044   -> need 7% edge
+#   - prop_tb         R^2 = 0.051   -> need 6% edge
+#   - prop_hits       R^2 = 0.054   -> need 6% edge
+#   - prop_pitcher_er R^2 = 0.055   -> need 6% edge
+# Other markets fall through to the user's slider value.
+_MARKET_MIN_EDGE_PCT: dict[str, float] = {
+    "prop_runs":       7.0,
+    "prop_rbi":        7.0,
+    "prop_tb":         6.0,
+    "prop_hits":       6.0,
+    "prop_pitcher_er": 6.0,
+}
+
+
+def _effective_edge_threshold_pct(market: str, slider_pct: float) -> float:
+    """Return the larger of the user's slider value and the market floor."""
+    return max(slider_pct, _MARKET_MIN_EDGE_PCT.get(market, 0.0))
+
+
 # ---------- Main entry point ----------
 def predict_slate(target_date: date | str | None = None,
                   edge_threshold: float = 0.03,
@@ -454,7 +476,12 @@ def predict_slate(target_date: date | str | None = None,
                         vb.game_pk = int(f.game_pk)
                         vb.player_id = _pid
                     gp.all_bets.extend(_vb_to_dict(vb) for vb in vbs_all)
-                    vbs = [vb for vb in vbs_all if vb.edge_pct >= edge_threshold * 100]
+                    # Apply per-market edge floor: noisy markets (hits/RBI/runs/
+                    # TB/pitcher_er, all R^2 < 0.06) require a bigger edge to
+                    # be flagged. Reliable markets fall through to the slider.
+                    vbs = [vb for vb in vbs_all
+                           if vb.edge_pct >= _effective_edge_threshold_pct(
+                               vb.market, edge_threshold * 100)]
                     game_prop_value.extend(vbs)
                     all_value_bets.extend(vbs)
             gp.prop_value = [_vb_to_dict(vb) for vb in game_prop_value]
