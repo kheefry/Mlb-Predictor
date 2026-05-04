@@ -47,10 +47,23 @@ def reload() -> None:
     _CALIBRATORS = None
 
 
+# How much weight to give the isotonic curve vs the raw projection. The
+# isotonic regressor produces a STEP FUNCTION — many distinct inputs collapse
+# to the same output, which destroys player-level differentiation (e.g. five
+# different pitchers all projected at 4.66 K). Blending with the raw value
+# preserves most of the calibration shape while ensuring a strictly
+# distinct output per distinct input. 0.7 = 70% calibration, 30% raw.
+_ISO_BLEND_WEIGHT = 0.7
+
+
 def apply(stat: str, raw_proj: float) -> float:
     """Apply the calibrated mapping for `stat` if available, else passthrough.
 
     Calibrator keys are like 'batter_h', 'batter_hr', 'pitcher_k', etc.
+    The output blends the isotonic prediction with the raw projection so
+    that two players with slightly different raw projections never map to
+    the exact same calibrated value (otherwise the leaderboard collapses
+    distinct pitchers/batters into ties).
     """
     if raw_proj is None:
         return raw_proj
@@ -59,8 +72,9 @@ def apply(stat: str, raw_proj: float) -> float:
     if iso is None:
         return float(raw_proj)
     try:
-        out = float(iso.predict([raw_proj])[0])
+        iso_pred = float(iso.predict([raw_proj])[0])
     except Exception:
         return float(raw_proj)
+    blended = _ISO_BLEND_WEIGHT * iso_pred + (1.0 - _ISO_BLEND_WEIGHT) * float(raw_proj)
     # Guard against negative or absurd outputs from a degenerate fit.
-    return max(0.0, out)
+    return max(0.0, blended)
