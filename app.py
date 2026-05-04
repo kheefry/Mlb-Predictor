@@ -445,7 +445,10 @@ with main_tab_value:
         ("Confidence",     "__confidence__"),
         ("Pure Conf.",     "__pure_confidence__"),
         ("HR",          ["prop_hr"]),
-        ("Hits",        ["prop_hits"]),
+        # Split Hits into two markets-by-line buckets so 1-hit (line 0.5)
+        # and 2+ hit (line >= 1.5) bets get their own top-20 list.
+        ("1 Hit",       "__hits_one__"),
+        ("2+ Hits",     "__hits_multi__"),
         ("TB",          ["prop_tb"]),
         ("RBI",         ["prop_rbi"]),
         ("Runs",        ["prop_runs"]),
@@ -455,6 +458,25 @@ with main_tab_value:
         ("Pitcher",     ["prop_pitcher_outs", "prop_pitcher_er", "prop_pitcher_h", "prop_pitcher_bb", "prop_pitcher_hr"]),
         ("Game Lines",  ["moneyline", "total", "run_line"]),
     ]
+
+
+    def _hits_subset(pool: list[dict], multi: bool) -> list[dict]:
+        """Filter prop_hits bets by whether the line is 1+-hit (0.5) or
+        multi-hit (1.5, 2.5)."""
+        out = []
+        for b in pool:
+            if b.get("market") != "prop_hits":
+                continue
+            line = b.get("line")
+            try:
+                line = float(line)
+            except (TypeError, ValueError):
+                continue
+            if multi and line >= 1.0:
+                out.append(b)
+            elif (not multi) and line < 1.0:
+                out.append(b)
+        return out
 
     # Compute counts per market tab for badge labels
     _market_pool_for_counts = getattr(slate, "all_bets", []) or _all_bets
@@ -466,6 +488,10 @@ with main_tab_value:
             return min(20, len(_all_bets))
         if markets == "__pure_confidence__":
             return min(20, len(_market_pool_for_counts))
+        if markets == "__hits_one__":
+            return min(20, len(_hits_subset(_market_pool_for_counts, multi=False)))
+        if markets == "__hits_multi__":
+            return min(20, len(_hits_subset(_market_pool_for_counts, multi=True)))
         return min(20, len([b for b in _filtered_pool if b.get("market") in markets]))
 
     _tab_labels = [f"{lab} ({_tab_count(mk)})" for lab, mk in MARKET_TABS]
@@ -494,6 +520,18 @@ with main_tab_value:
                     pool = sorted(
                         getattr(slate, "all_bets", []) or [],
                         key=lambda x: -(x.get("confidence") or 0),
+                    )[:20]
+                elif markets == "__hits_one__":
+                    _market_pool = getattr(slate, "all_bets", []) or _all_bets
+                    pool = sorted(
+                        _hits_subset(_market_pool, multi=False),
+                        key=lambda x: -x.get(sort_key, 0),
+                    )[:20]
+                elif markets == "__hits_multi__":
+                    _market_pool = getattr(slate, "all_bets", []) or _all_bets
+                    pool = sorted(
+                        _hits_subset(_market_pool, multi=True),
+                        key=lambda x: -x.get(sort_key, 0),
                     )[:20]
                 else:
                     _market_pool = getattr(slate, "all_bets", []) or _all_bets
