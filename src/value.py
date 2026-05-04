@@ -57,8 +57,10 @@ def devig_two_way(p_a: float, p_b: float) -> tuple[float, float]:
 # logged bet outcomes from the first two slates showed picks rated >=.65 won
 # only 33% — strong overconfidence at the high end. Shrinking toward 0.5
 # closes the gap between displayed model probability and realised win rate.
-# 0.6 was set from the bucket calibration (slope of empirical vs nominal).
-CALIBRATION_SHRINK = 0.6
+# Bumped 0.6 -> 0.5 after May 2026 holdout: 60-70% bucket claimed 64.5% but
+# won 45%; 70-80% bucket claimed 75% but won 50%. The wider shrink hurts
+# mid-edge picks slightly but cuts the worst overconfidence in half.
+CALIBRATION_SHRINK = 0.5
 
 
 def calibrate_prob(p: float) -> float:
@@ -276,6 +278,28 @@ def write_stat_reliability(weights: dict[str, float] | None = None, path: Path |
     _STAT_RELIABILITY_CACHE = None  # force reload next call
 
 
+# Edge shrinkage for ranking: the bet log shows that bigger projected edges
+# are LESS likely to win — 5-10% edges hit 60% of the time, 15%+ edges only
+# 39%. The model's extreme projections (which produce big edges) are where
+# its biases compound most. Compress edges above 5% with diminishing returns
+# so the leaderboard isn't dominated by fake-bonus longshots.
+#
+# Curve: edges <= 5% pass through; edges above 5% are compressed via
+#        eff = 5 + sqrt(max(0, raw - 5) * 5)
+# Examples:
+#   raw  3% -> eff  3.0%   (unchanged)
+#   raw  5% -> eff  5.0%   (unchanged)
+#   raw  8% -> eff  8.9%
+#   raw 12% -> eff 10.9%
+#   raw 18% -> eff 13.1%
+#   raw 25% -> eff 15.0%
+def _shrunk_edge_for_ranking(edge_pct: float) -> float:
+    if edge_pct <= 5.0:
+        return float(edge_pct)
+    import math
+    return 5.0 + math.sqrt(max(0.0, edge_pct - 5.0) * 5.0)
+
+
 def annotate(vb: ValueBet) -> ValueBet:
     """Populate confidence + score on a ValueBet. Returns the same object."""
     import math
@@ -283,29 +307,27 @@ def annotate(vb: ValueBet) -> ValueBet:
     p = max(0.01, min(0.99, vb.model_prob))
     # confidence: display metric for outcome uncertainty — peaks at p=0.5
     vb.confidence = float(rel * 4.0 * p * (1.0 - p))
-    # score: Sharpe-like ranking metric — edge_pct divided by Bernoulli std dev,
-    # scaled by reliability. Unlike 4p(1-p), this doesn't penalise high-confidence
-    # picks: a lock at p=0.9 with 5% edge scores higher than a coin-flip with the
-    # same edge, consistent with Kelly sizing.
-    vb.score = float(vb.edge_pct * rel / math.sqrt(p * (1.0 - p)))
+    # score uses a shrunk edge so big "fake" edges don't crowd out genuine
+    # mid-edge picks. Display edge_pct stays raw; only ranking changes.
+    eff_edge = _shrunk_edge_for_ranking(vb.edge_pct)
+    vb.score = float(eff_edge * rel / math.sqrt(p * (1.0 - p)))
     return vb
 
 
 def score_bet(vb: ValueBet) -> float:
     """Sharpe-like ranking score for a value bet.
 
-    score = (edge_pct / sqrt(p*(1-p))) × stat_reliability
+    score = (shrunk_edge / sqrt(p*(1-p))) × stat_reliability
 
     Dividing by the Bernoulli standard deviation normalises edge by outcome
-    uncertainty, analogous to a Sharpe ratio. Consistent with Kelly sizing:
-    a high-confidence pick with the same edge scores higher than a coin-flip
-    (Kelly also says size up near-certain edges). Contrast with the previous
-    4p(1-p) info-factor which perversely penalised locks.
+    uncertainty, analogous to a Sharpe ratio. The edge_pct is passed through
+    `_shrunk_edge_for_ranking` so the model's extreme-projection bias is
+    discounted (15% edges win less than 5-10% edges in our bet log).
     """
     import math
     rel = _get_stat_reliability().get(vb.market, 0.40)
     p = max(0.01, min(0.99, vb.model_prob))
-    return vb.edge_pct * rel / math.sqrt(p * (1.0 - p))
+    return _shrunk_edge_for_ranking(vb.edge_pct) * rel / math.sqrt(p * (1.0 - p))
 
 
 def evaluate_game_lines(

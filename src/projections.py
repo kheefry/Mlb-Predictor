@@ -573,10 +573,12 @@ def project_pitcher(
                     pq[k] = (1 - rw) * pq[k] + rw * pq_recent[k]
             # K/9 gets a higher recent-form weight: books already price recent K
             # streaks in, so a low-season-average pitcher on a hot K run is
-            # systematically under-projected without this.  At 50 BF (2-3 starts)
-            # this gives ~50% weight on recent K/9; caps at 60%.
+            # systematically under-projected without this.  Cap raised 0.60
+            # → 0.75 after May 2026 holdout showed top-decile pitcher K still
+            # under-projecting by 1.48. Hot recent form is a stronger signal
+            # than the lagging season K/9.
             if "k9" in pq and "k9" in pq_recent:
-                rw_k = min(0.60, rec_bf / 100.0)
+                rw_k = min(0.75, rec_bf / 80.0)
                 pq["k9"] = (1 - rw_k) * pq["k9"] + rw_k * pq_recent["k9"]
 
     e_outs = _expected_outs(pq, opp_off_idx.get("rpg", 4.5))

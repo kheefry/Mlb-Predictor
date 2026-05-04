@@ -83,19 +83,23 @@ def pitcher_quality_index(stats: dict, sc_stats: dict | None = None) -> dict:
     # compression in the May 2026 7-day backtest: top-quartile pitcher K bin
     # under-projected by 0.75 K (5.87 proj vs 6.62 actual). Use a tighter K-only
     # prior so power arms hold their K/9 more aggressively.
-    prior_k = 25.0
+    # K/9 prior loosened from 25 to 15. May 2026 holdout still showed
+    # top-decile pitcher K under-projecting by 1.48 K/start even with a
+    # whiff-anchored prior — the season-rate shrinkage was still pulling
+    # elites down. At BF=80, w_k jumps from 0.76 (prior 25) to 0.84 (prior 15).
+    prior_k = 15.0
     w_k = bf / (bf + prior_k) if bf > 0 else 0.0
 
     # Whiff-anchored K/9 prior: when Statcast whiff_pct is available with
     # enough sample (>= 30 BF), use it to compute the K/9 prior instead of
-    # LEAGUE_K9. Empirical relationship: K/9 ≈ whiff% × 0.35 (league 25%
-    # whiff → 8.75 K/9 ≈ LEAGUE_K9). High-whiff pitchers (35%+) get a
-    # ~12 K/9 prior, breaking the systematic compression toward league
-    # mean for elite K guys.
+    # LEAGUE_K9. Empirical relationship K/9 ≈ whiff% × 0.38 (slightly
+    # steeper than linear: high-whiff pitchers also have high CSW%/strike%
+    # so the K/9 → whiff curve is convex at the top). League 25% whiff
+    # → 9.5 K/9. Elite 35% whiff → 13.3 K/9.
     sc_bf = (sc_stats or {}).get("bf") or 0.0
     sc_whiff = (sc_stats or {}).get("whiff_pct")
     if sc_whiff is not None and sc_bf >= 30:
-        whiff_prior_k9 = max(4.0, min(15.0, float(sc_whiff) * 0.35))
+        whiff_prior_k9 = max(4.0, min(16.0, float(sc_whiff) * 0.38))
     else:
         whiff_prior_k9 = LEAGUE_K9
 
