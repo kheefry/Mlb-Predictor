@@ -68,8 +68,11 @@ def log_picks(target_date: str | date, bets: list[dict], top_n: int = 10) -> Non
     existing: list[dict] = _load_log()
 
     date_str = target_date.isoformat() if isinstance(target_date, date) else target_date
+    # Skip bets from games where starters haven't been confirmed — the
+    # pitcher projections are placeholder values and edges are unreliable.
+    eligible = [b for b in bets if b.get("starters_confirmed", True)]
     # Sort by confidence descending and take top N
-    picks = sorted(bets, key=lambda x: -(x.get("confidence") or 0))[:top_n]
+    picks = sorted(eligible, key=lambda x: -(x.get("confidence") or 0))[:top_n]
 
     for p in picks:
         entry = {

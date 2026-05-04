@@ -207,6 +207,12 @@ class ValueBet:
     # For bet tracking — populated by predict_core after creation
     game_pk: Optional[int] = None
     player_id: Optional[int] = None
+    # True when both starting pitchers for the game are confirmed. Bets with
+    # this False (one or both pitchers TBD) are excluded from the Top 5 panel
+    # and visually flagged in the leaderboard. The model's pitcher
+    # projections fall back to a generic placeholder when the starter is
+    # unknown, which means edges are unreliable for those games.
+    starters_confirmed: bool = True
 
 
 # Default reliability weights (sqrt of R² from backtest, eyeballed).

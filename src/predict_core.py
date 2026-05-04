@@ -75,6 +75,10 @@ class GamePrediction:
     # Every evaluated bet for this game, regardless of edge — used by the
     # Pure Confidence leaderboard (model-certainty only, ignores book agreement).
     all_bets: list[dict] = field(default_factory=list)
+    # True only when BOTH starters are announced. UI flags this as a
+    # warning and the leaderboard's Top 5 panel excludes bets from
+    # unconfirmed games (since pitcher projections fall back to defaults).
+    starters_confirmed: bool = True
 
 
 @dataclass
@@ -262,6 +266,17 @@ def predict_slate(target_date: date | str | None = None,
         park = parks.get_park(f.venue)
         utc_dt = mlb_api.parse_game_time(g)
 
+        # Starters confirmed = both pitchers have player IDs and a real name.
+        # Schedule data sometimes lists "TBD" or empty until the team posts.
+        def _is_real_starter(sp_id, sp_name) -> bool:
+            if not sp_id:
+                return False
+            n = (sp_name or "").strip().lower()
+            return n not in ("", "?", "tbd", "tba", "unknown", "to be announced")
+
+        starters_confirmed = (_is_real_starter(f.home_sp_id, f.home_sp_name)
+                              and _is_real_starter(f.away_sp_id, f.away_sp_name))
+
         gp = GamePrediction(
             game_pk=int(f.game_pk), date=f.date, venue=f.venue,
             park_roof=park.roof, park_pf_runs=park.pf_runs, park_pf_hr=park.pf_hr,
@@ -273,6 +288,7 @@ def predict_slate(target_date: date | str | None = None,
             home_sp_fip=f.home_sp_fip, home_sp_xfip=f.home_sp_xfip,
             away_sp_id=f.away_sp_id, away_sp_name=f.away_sp_name,
             away_sp_fip=f.away_sp_fip, away_sp_xfip=f.away_sp_xfip,
+            starters_confirmed=starters_confirmed,
 
             temp_f=f.temp_f, wind_to_cf_mph=f.wind_to_cf_mph,
             runs_mult=f.runs_mult, hr_mult=f.hr_mult,
@@ -352,6 +368,7 @@ def predict_slate(target_date: date | str | None = None,
             )
             for vb in game_value_all:
                 vb.game_pk = int(f.game_pk)
+                vb.starters_confirmed = starters_confirmed
             game_value = [vb for vb in game_value_all if vb.edge_pct >= edge_threshold * 100]
             gp.game_value = [_vb_to_dict(vb) for vb in game_value]
             gp.all_bets.extend(_vb_to_dict(vb) for vb in game_value_all)
@@ -501,6 +518,7 @@ def predict_slate(target_date: date | str | None = None,
                     for vb in vbs_all:
                         vb.game_pk = int(f.game_pk)
                         vb.player_id = _pid
+                        vb.starters_confirmed = starters_confirmed
                     gp.all_bets.extend(_vb_to_dict(vb) for vb in vbs_all)
                     # Apply per-market edge floor: noisy markets (hits/RBI/runs/
                     # TB/pitcher_er, all R^2 < 0.06) require a bigger edge to

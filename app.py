@@ -365,7 +365,23 @@ if slate.concentration_warning:
 sort_key = "score" if ranking_mode == "Score" else "ev_per_dollar"
 _sort_col = "Score" if sort_key == "score" else "EV/$"
 
-_top5 = sorted(slate.top_value, key=lambda x: -x.get(sort_key, 0))[:5]
+# Pitcher-confirmation: exclude bets from games where one or both starters
+# are TBD. Their pitcher projections fall back to defaults so any "edge" is
+# unreliable. Flagged games are listed in a separate warning below.
+_unconfirmed_games = sorted(
+    {f"{gp.away_team} @ {gp.home_team}" for gp in slate.games if not gp.starters_confirmed}
+)
+if _unconfirmed_games:
+    st.warning(
+        ":warning: **Starter not yet announced for "
+        + ", ".join(_unconfirmed_games)
+        + "** — bets from these games are flagged in the leaderboard and "
+        "excluded from Top 5 (pitcher projections aren't reliable until "
+        "the starter is posted)."
+    )
+
+_top5_pool = [b for b in slate.top_value if b.get("starters_confirmed", True)]
+_top5 = sorted(_top5_pool, key=lambda x: -x.get(sort_key, 0))[:5]
 if _top5:
     st.markdown("### :star: Top 5 picks")
     _cols = st.columns(min(5, len(_top5)))
@@ -505,8 +521,17 @@ with main_tab_value:
                     )
 
                 _raw = pd.DataFrame(pool)
+                # Prefix bet descriptions with a warning emoji when the
+                # game's starter isn't confirmed yet.
+                if "starters_confirmed" in _raw.columns:
+                    _bet_disp = [
+                        (d if c else f":warning: {d}")
+                        for d, c in zip(_raw["description"], _raw["starters_confirmed"])
+                    ]
+                else:
+                    _bet_disp = _raw["description"]
                 _df_cols: dict = {
-                    "Bet":        _raw["description"],
+                    "Bet":        _bet_disp,
                     "Odds":       _raw["odds"].apply(_amer),
                     "Model%":     (_raw["model_prob"] * 100).round(1),
                     "No-vig%":    (_raw["novig_prob"] * 100).round(1),
