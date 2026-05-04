@@ -266,16 +266,39 @@ def predict_slate(target_date: date | str | None = None,
         park = parks.get_park(f.venue)
         utc_dt = mlb_api.parse_game_time(g)
 
-        # Starters confirmed = both pitchers have player IDs and a real name.
-        # Schedule data sometimes lists "TBD" or empty until the team posts.
+        # Starters confirmed: a multi-source check.
+        # 1. MLB API claims both starters (rejects "TBD"/"?"/empty names).
+        # 2. When a sportsbook is loaded, the book ALSO needs to price the
+        #    matchup (pitcher_k markets exist for both probable starters
+        #    OR the moneyline is up). Books are conservative — they don't
+        #    price what isn't yet finalised, so this catches "MLB has a
+        #    probable but the team hasn't formally announced" cases.
         def _is_real_starter(sp_id, sp_name) -> bool:
             if not sp_id:
                 return False
             n = (sp_name or "").strip().lower()
             return n not in ("", "?", "tbd", "tba", "unknown", "to be announced")
 
-        starters_confirmed = (_is_real_starter(f.home_sp_id, f.home_sp_name)
-                              and _is_real_starter(f.away_sp_id, f.away_sp_name))
+        _mlb_confirmed = (_is_real_starter(f.home_sp_id, f.home_sp_name)
+                          and _is_real_starter(f.away_sp_id, f.away_sp_name))
+
+        # Book cross-check: if any props were loaded, look for pitcher_k
+        # markets matching either starter. We don't require BOTH (Bovada
+        # often misses the lower-K-rate guy in mismatch games), only that
+        # at least one is priced. Empty merged_props means we ran without
+        # odds — fall back to MLB-only signal.
+        _book_confirmed = True
+        if merged_props:
+            _hp = (f.home_sp_name or "").lower()
+            _ap = (f.away_sp_name or "").lower()
+            _priced = {p.get("player", "").lower() for p in merged_props
+                       if p.get("market") == "pitcher_k"}
+            _book_confirmed = any(
+                (sp_name and any(sp_name in pn or pn in sp_name for pn in _priced))
+                for sp_name in (_hp, _ap) if sp_name
+            )
+
+        starters_confirmed = _mlb_confirmed and _book_confirmed
 
         gp = GamePrediction(
             game_pk=int(f.game_pk), date=f.date, venue=f.venue,
