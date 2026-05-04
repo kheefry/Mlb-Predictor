@@ -522,6 +522,16 @@ def project_batter(
         out = _apply_ml_adjustment_batter(out, bat_stats, recent_stats,
                                           opp_sp_q, park, weather_adj,
                                           team_pred_runs, blend=ml_blend)
+    # Per-stat isotonic calibration: bend the projection curve to match
+    # observed top/bottom-decile actuals. No-op when calibrators missing.
+    from . import projection_cal as _cal
+    out.proj_h    = _cal.apply("batter_h",    out.proj_h)
+    out.proj_hr   = _cal.apply("batter_hr",   out.proj_hr)
+    out.proj_tb   = _cal.apply("batter_tb",   out.proj_tb)
+    out.proj_rbi  = _cal.apply("batter_rbi",  out.proj_rbi)
+    out.proj_runs = _cal.apply("batter_runs", out.proj_runs)
+    out.proj_k    = _cal.apply("batter_k",    out.proj_k)
+    out.proj_bb   = _cal.apply("batter_bb",   out.proj_bb)
     return out
 
 
@@ -638,4 +648,13 @@ def project_pitcher(
         out = _apply_ml_adjustment_pitcher(out, pit_stats, recent_stats,
                                            opp_off_idx, park, weather_adj,
                                            opp_pred_runs, blend=ml_blend)
+    # Per-stat isotonic calibration. No-op when calibrators missing.
+    from . import projection_cal as _cal
+    out.proj_k         = _cal.apply("pitcher_k",    out.proj_k)
+    out.proj_bb        = _cal.apply("pitcher_bb",   out.proj_bb)
+    out.proj_h         = _cal.apply("pitcher_h",    out.proj_h)
+    out.proj_er        = _cal.apply("pitcher_er",   out.proj_er)
+    out.proj_hr_allowed = _cal.apply("pitcher_hr",  out.proj_hr_allowed)
+    out.expected_outs  = _cal.apply("pitcher_outs", out.expected_outs)
+    out.expected_ip    = out.expected_outs / 3.0
     return out

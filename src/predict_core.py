@@ -124,12 +124,14 @@ def _vb_to_dict(vb: value.ValueBet) -> dict:
 
 
 # Per-market minimum edge floors — noisy markets need a bigger edge to be
-# worth flagging. Based on May 2026 7-day backtest R^2:
-#   - prop_runs       R^2 = 0.034   -> need 7% edge
-#   - prop_rbi        R^2 = 0.044   -> need 7% edge
-#   - prop_tb         R^2 = 0.051   -> need 6% edge
-#   - prop_hits       R^2 = 0.054   -> need 6% edge
-#   - prop_pitcher_er R^2 = 0.055   -> need 6% edge
+# worth flagging. Based on May 2026 21-day backtest R^2:
+#   - prop_runs       R^2 = 0.049   -> need 7% edge
+#   - prop_rbi        R^2 = 0.051   -> need 7% edge
+#   - prop_tb         R^2 = 0.063   -> need 6% edge
+#   - prop_hits       R^2 = 0.064   -> need 6% edge
+#   - prop_pitcher_er R^2 = 0.068   -> need 6% edge
+#   - prop_pitcher_bb R^2 = 0.114   -> need 5% edge (borderline)
+#   - prop_pitcher_hr R^2 = 0.114   -> need 5% edge (borderline)
 # Other markets fall through to the user's slider value.
 _MARKET_MIN_EDGE_PCT: dict[str, float] = {
     "prop_runs":       7.0,
@@ -137,6 +139,8 @@ _MARKET_MIN_EDGE_PCT: dict[str, float] = {
     "prop_tb":         6.0,
     "prop_hits":       6.0,
     "prop_pitcher_er": 6.0,
+    "prop_pitcher_bb": 5.0,
+    "prop_pitcher_hr": 5.0,
 }
 
 
@@ -471,6 +475,28 @@ def predict_slate(target_date: date | str | None = None,
                         # to overcome 1-K variance on the line.
                         vbs_all = [vb for vb in vbs_all
                                    if not (" UNDER " in vb.description and vb.edge_pct < 5.0)]
+                # Pitcher OUTS workhorse UNDER guard (mirror to short-start):
+                # 21-day backtest top-decile pitcher outs under-projects by
+                # 1.18 outs (proj 17.0, actual 18.2). Top arms exceed our
+                # outs projection, so UNDER picks at high lines lose the same
+                # way pitcher K UNDERs lose for elite arms. Drop pitcher_outs
+                # UNDERs when projected outs >= 16.5 (≈ 5.5 IP) OR when the
+                # book line is >= 17.5.
+                if (is_pitcher and pp["market"] == "pitcher_outs" and vbs_all):
+                    _high_outs_line = pp["line"] >= 17.5
+                    _workhorse = pproj.expected_outs >= 16.5
+                    if _high_outs_line or _workhorse:
+                        vbs_all = [vb for vb in vbs_all if " UNDER " not in vb.description]
+                # Batter TB UNDER guard: top-decile TB projections under-shoot
+                # by 0.67 TB (proj 1.84, actual 2.51) — elite power hitters
+                # drive way more bases than projected. Drop TB UNDERs when
+                # the batter's Statcast barrel% is elite (>= 12), parallel to
+                # the elite-K pitcher UNDER guard.
+                if (not is_pitcher and pp["market"] == "tb" and vbs_all):
+                    _barrel = (sc_bat_data.get(_pid) or {}).get("barrel_pct") or 0.0
+                    _xwoba  = (sc_bat_data.get(_pid) or {}).get("xwoba")      or 0.0
+                    if _barrel >= 12.0 or _xwoba >= 0.380:
+                        vbs_all = [vb for vb in vbs_all if " UNDER " not in vb.description]
                 if vbs_all:
                     for vb in vbs_all:
                         vb.game_pk = int(f.game_pk)
