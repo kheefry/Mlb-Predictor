@@ -424,20 +424,31 @@ def predict_slate(target_date: date | str | None = None,
                 if is_pitcher and vbs_all and pproj.expected_outs < 14.5:
                     vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
                 # Pitcher K UNDER guard: high-line UNDERs (>= 6.0) and elite-K
-                # pitchers (whiff% >= 28%) are systematically losing bets in the
-                # log. Apr 30 - May 2 record:
+                # pitchers are systematically losing bets in the log. Apr 30 -
+                # May 2 record:
                 #   - UNDER 6.5: 0W 3L (Skenes 9 K, Ragans 8 K, Misiorowski 8 K)
                 #   - whiff% >= 30%: 0W 2L
+                #   - McCullers Jr (whiff 27.9, k_pct 24.8) UNDER 4.5 -> 9 K
                 # The book's high lines on elite arms reflect their true K rate;
-                # our projection is biased low (compression) so we lean UNDER and
-                # lose. Drop those UNDER picks regardless of model edge.
+                # our projection is biased low (compression) so we lean UNDER
+                # and lose. Thresholds tightened (whiff 28 -> 27, k_pct 26 -> 25)
+                # to catch borderline-elite arms — verified no historical UNDER
+                # wins fall in the new band (max winning K% was 22.7 Flaherty,
+                # max winning whiff 25.0).
+                # Also skip very-low-conviction UNDERs (edge < 5%): the 0-5%
+                # bucket is too thin a margin to justify model noise.
                 if (is_pitcher and pp["market"] == "pitcher_k" and vbs_all):
                     _whiff = (sc_pit_data.get(_pid) or {}).get("whiff_pct") or 0.0
                     _kpct  = (sc_pit_data.get(_pid) or {}).get("k_pct")    or 0.0
                     _high_line  = pp["line"] >= 6.0
-                    _elite_arm  = _whiff >= 28.0 or _kpct >= 26.0
+                    _elite_arm  = _whiff >= 27.0 or _kpct >= 25.0
                     if _high_line or _elite_arm:
                         vbs_all = [vb for vb in vbs_all if " UNDER " not in vb.description]
+                    else:
+                        # Filter low-conviction UNDERs (edge < 5%) — too thin
+                        # to overcome 1-K variance on the line.
+                        vbs_all = [vb for vb in vbs_all
+                                   if not (" UNDER " in vb.description and vb.edge_pct < 5.0)]
                 if vbs_all:
                     for vb in vbs_all:
                         vb.game_pk = int(f.game_pk)
