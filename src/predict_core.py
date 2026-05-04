@@ -413,6 +413,7 @@ def predict_slate(target_date: date | str | None = None,
                 vbs_all = value.evaluate_prop(name, pp["market"], mean, pp["line"],
                                               pp.get("over"), pp.get("under"),
                                               edge_threshold=-1.0)
+                _pid = int(pdata.get("player_id") or 0)
                 # Short-start guard: drop pitcher counting-stat OVERs when we
                 # project < 4.5 IP (13.5 outs). Quick-hook starts — rookies on
                 # pitch counts, openers, struggling vets — can collapse an
@@ -422,8 +423,22 @@ def predict_slate(target_date: date | str | None = None,
                 # a quick pull. UNDERs are unaffected (a short start helps them).
                 if is_pitcher and vbs_all and pproj.expected_outs < 14.5:
                     vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
+                # Pitcher K UNDER guard: high-line UNDERs (>= 6.0) and elite-K
+                # pitchers (whiff% >= 28%) are systematically losing bets in the
+                # log. Apr 30 - May 2 record:
+                #   - UNDER 6.5: 0W 3L (Skenes 9 K, Ragans 8 K, Misiorowski 8 K)
+                #   - whiff% >= 30%: 0W 2L
+                # The book's high lines on elite arms reflect their true K rate;
+                # our projection is biased low (compression) so we lean UNDER and
+                # lose. Drop those UNDER picks regardless of model edge.
+                if (is_pitcher and pp["market"] == "pitcher_k" and vbs_all):
+                    _whiff = (sc_pit_data.get(_pid) or {}).get("whiff_pct") or 0.0
+                    _kpct  = (sc_pit_data.get(_pid) or {}).get("k_pct")    or 0.0
+                    _high_line  = pp["line"] >= 6.0
+                    _elite_arm  = _whiff >= 28.0 or _kpct >= 26.0
+                    if _high_line or _elite_arm:
+                        vbs_all = [vb for vb in vbs_all if " UNDER " not in vb.description]
                 if vbs_all:
-                    _pid = int(pdata.get("player_id") or 0)
                     for vb in vbs_all:
                         vb.game_pk = int(f.game_pk)
                         vb.player_id = _pid
