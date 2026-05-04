@@ -312,7 +312,6 @@ with st.sidebar:
 
 
 # ---------- Header ----------
-_date_label = selected_date.strftime("%A, %B %-d, %Y") if hasattr(selected_date, "strftime") else selected_date.isoformat()
 try:
     _date_label = selected_date.strftime("%A, %B %d, %Y").replace(" 0", " ")
 except Exception:
