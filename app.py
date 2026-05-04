@@ -67,8 +67,22 @@ st.markdown(
         border-radius: 8px;
         padding: 12px 16px;
         margin-bottom: 8px;
+        min-height: 130px;          /* keeps cards uniform height */
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
-    .pick-bet { font-weight: 600; font-size: 0.95rem; }
+    /* Bet line: allow wrapping and break-anywhere on long descriptions
+       (game totals like 'San Francisco Giants @ Philadelphia Phillies
+       Under 8.0' won't fit on one line). Font size scales down via the
+       inline style attribute set per-card. */
+    .pick-bet {
+        font-weight: 600;
+        line-height: 1.25;
+        word-wrap: break-word;
+        overflow-wrap: anywhere;
+        hyphens: auto;
+    }
     .pick-meta { opacity: 0.75; font-size: 0.85rem; }
     .pick-edge { color: #2ea043; font-weight: 600; font-size: 1.1rem; }
 
@@ -388,17 +402,25 @@ if _top5:
     for col, vb in zip(_cols, _top5):
         with col:
             _bet = vb["description"]
-            # Trim noisy juice tags from card display
-            _bet_short = _bet.replace(" [1-sided, ~6% juice est.]", "")
-            if len(_bet_short) > 38:
-                _bet_short = _bet_short[:35] + "…"
+            # Trim noisy juice tags from card display — full description
+            # is preserved otherwise; CSS handles wrapping for long text.
+            _bet_full = _bet.replace(" [1-sided, ~6% juice est.]", "")
+            # Auto-scale font size based on length so game-total descriptions
+            # like "San Francisco Giants @ Philadelphia Phillies Under 8.0"
+            # still fit cleanly on the card without truncation.
+            _n = len(_bet_full)
+            if   _n <= 30:  _font = "1.00rem"
+            elif _n <= 40:  _font = "0.92rem"
+            elif _n <= 50:  _font = "0.82rem"
+            elif _n <= 65:  _font = "0.74rem"
+            else:           _font = "0.68rem"
             _odds = _amer(vb["odds"])
             _edge = vb.get("edge_pct", 0)
             _kelly = (vb.get("kelly", 0) or 0) * 100
             _model_p = (vb.get("model_prob", 0) or 0) * 100
             st.markdown(
                 f"""<div class="pick-card">
-                <div class="pick-bet">{_bet_short}</div>
+                <div class="pick-bet" style="font-size: {_font};" title="{_bet_full}">{_bet_full}</div>
                 <div class="pick-meta">{_odds} · model {_model_p:.0f}%</div>
                 <div class="pick-edge">+{_edge:.1f}% edge</div>
                 <div class="pick-meta">Kelly {_kelly:.1f}%</div>
