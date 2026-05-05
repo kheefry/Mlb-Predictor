@@ -47,7 +47,7 @@ _PRIOR_BF_PIT  = 150    # ≈ 50 IP
 
 # Cache version suffix — bump when selections change so stale files are ignored
 _BAT_VER = "v3"   # bumped when xba added
-_PIT_VER = "v3"   # bumped when whiff_percent added
+_PIT_VER = "v3"   # v3: whiff_percent + k_percent; k_pct now used as primary K prior
 
 
 # ---------- Internals ----------
@@ -151,7 +151,7 @@ def get_pitcher_stats(year: int) -> dict[int, dict]:
     """
     df = _fetch_leaderboard(
         year, "pitcher",
-        "pa,xera,xwoba,barrel_batted_rate,hard_hit_percent,whiff_percent,k_percent",
+        "pa,xera,xwoba,barrel_batted_rate,hard_hit_percent,whiff_percent,k_percent,called_strike_percent",
         min_pa=10,
         cache_key=f"pitcher_{_PIT_VER}",
     )

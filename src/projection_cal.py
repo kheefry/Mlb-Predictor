@@ -52,8 +52,13 @@ def reload() -> None:
 # to the same output, which destroys player-level differentiation (e.g. five
 # different pitchers all projected at 4.66 K). Blending with the raw value
 # preserves most of the calibration shape while ensuring a strictly
-# distinct output per distinct input. 0.7 = 70% calibration, 30% raw.
-_ISO_BLEND_WEIGHT = 0.7
+# distinct output per distinct input.
+# Raised 0.70 -> 0.85 after May 2026 deep backtest showed top-quintile
+# batter hits/TB/RBI still under-projected by ~0.10 at 0.70 blend.
+# The higher weight pulls elite hitters closer to their true level without
+# collapsing distinct projections into ties (distinct raw inputs remain
+# distinct after blending even at 0.85).
+_ISO_BLEND_WEIGHT = 0.85
 
 
 def apply(stat: str, raw_proj: float) -> float:

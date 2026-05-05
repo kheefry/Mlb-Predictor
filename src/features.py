@@ -90,15 +90,24 @@ def pitcher_quality_index(stats: dict, sc_stats: dict | None = None) -> dict:
     prior_k = 15.0
     w_k = bf / (bf + prior_k) if bf > 0 else 0.0
 
-    # Whiff-anchored K/9 prior: when Statcast whiff_pct is available with
-    # enough sample (>= 30 BF), use it to compute the K/9 prior instead of
-    # LEAGUE_K9. Empirical relationship K/9 ≈ whiff% × 0.38 (slightly
-    # steeper than linear: high-whiff pitchers also have high CSW%/strike%
-    # so the K/9 → whiff curve is convex at the top). League 25% whiff
-    # → 9.5 K/9. Elite 35% whiff → 13.3 K/9.
-    sc_bf = (sc_stats or {}).get("bf") or 0.0
+    # K/9 prior hierarchy (most → least direct signal):
+    #   1. k_pct from Statcast (>= 50 BF): K% × 38.7 converts directly to K/9
+    #      at the league-average 4.3 BF/IP rate. Most accurate for pitchers
+    #      with 3+ starts; league at 22.5% → 8.7 K/9, elite 32% → 12.4 K/9.
+    #   2. whiff_pct from Statcast (>= 15 BF): stabilises faster (~15 BF) so
+    #      useful for 1-2 start samples where k_pct is still noisy. Coefficient
+    #      0.38: league 25% whiff → 9.5 K/9, elite 35% → 13.3 K/9.
+    #      BF floor lowered 30 → 15 so early-season starters hit the prior sooner.
+    #   3. LEAGUE_K9 fallback when neither has enough sample.
+    # May 2026 deep backtest: top-decile pitcher K under-projected by 0.833 K
+    # with whiff-only prior. k_pct at 50 BF gives a tighter signal for elites.
+    sc_bf    = (sc_stats or {}).get("bf") or 0.0
+    sc_kpct  = (sc_stats or {}).get("k_pct")
     sc_whiff = (sc_stats or {}).get("whiff_pct")
-    if sc_whiff is not None and sc_bf >= 30:
+    if sc_kpct is not None and sc_bf >= 50:
+        # k_pct is reported as a percent (e.g. 27.3 for 27.3%)
+        whiff_prior_k9 = max(4.0, min(16.0, (float(sc_kpct) / 100.0) * 38.7))
+    elif sc_whiff is not None and sc_bf >= 15:
         whiff_prior_k9 = max(4.0, min(16.0, float(sc_whiff) * 0.38))
     else:
         whiff_prior_k9 = LEAGUE_K9

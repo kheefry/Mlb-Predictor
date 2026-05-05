@@ -400,9 +400,17 @@ def predict_slate(target_date: date | str | None = None,
         # Player props for this game
         if merged_props:
             by_name = {}
-            for bs in (proj.get_likely_batters(f.home_team_id, batter_stats, lineup_ids=home_lineup_ids) +
-                       proj.get_likely_batters(f.away_team_id, batter_stats, lineup_ids=away_lineup_ids)):
-                by_name[bs.get("name", "")] = bs
+            # Also build player_id -> lineup order (1-indexed) for lineup position filters.
+            _lineup_order: dict[int, int] = {}
+            for _side_batters in (
+                proj.get_likely_batters(f.home_team_id, batter_stats, lineup_ids=home_lineup_ids),
+                proj.get_likely_batters(f.away_team_id, batter_stats, lineup_ids=away_lineup_ids),
+            ):
+                for _pos, bs in enumerate(_side_batters, start=1):
+                    by_name[bs.get("name", "")] = bs
+                    _pid_order = int(bs.get("player_id") or 0)
+                    if _pid_order:
+                        _lineup_order[_pid_order] = _pos
             for sp_id in (f.home_sp_id, f.away_sp_id):
                 if sp_id and pitcher_stats.get(sp_id):
                     by_name[pitcher_stats[sp_id].get("name", "")] = pitcher_stats[sp_id]
@@ -515,6 +523,32 @@ def predict_slate(target_date: date | str | None = None,
                         # to overcome 1-K variance on the line.
                         vbs_all = [vb for vb in vbs_all
                                    if not (" UNDER " in vb.description and vb.edge_pct < 5.0)]
+                        # Low-line K UNDER guard: for lines <= 4.5, the gap
+                        # between projection and line must be >= 1.0 K. A 0.3 K
+                        # gap is well inside one-inning variance. Bet log losses:
+                        # Leahy UNDER 3.5 (proj ~3.2, actual 5), Junk UNDER 3.5
+                        # (proj ~3.2, actual 6). Requiring proj <= line-1.0 means
+                        # we only take these when we strongly expect a short/weak outing.
+                        if pp["line"] <= 4.5:
+                            vbs_all = [vb for vb in vbs_all
+                                       if not (" UNDER " in vb.description
+                                               and pproj.proj_k > pp["line"] - 1.0)]
+                    # K OVER guard: require a meaningful projection gap AND a
+                    # deep-start expectation. The 0W 5L at high-edge OVERs was
+                    # driven by two failure modes:
+                    #   (a) marginal gap — model proj barely above line, one bad
+                    #       inning flips OVER → UNDER
+                    #   (b) blowup starts — model projects 6 K, pitcher gets
+                    #       yanked in 2nd inning with 1 K (Lowder, Rhett etc.)
+                    # Requirements: proj_k > line + 1.0 (real gap, not noise)
+                    #               AND expected_outs >= 16.5 (~5.5 IP, workhorse)
+                    # The existing short-start guard (< 14.5 outs) already
+                    # catches the most extreme quick-hook risk; this adds a higher
+                    # floor specifically for K OVERs where early exits are fatal.
+                    vbs_all = [vb for vb in vbs_all
+                               if not (" OVER " in vb.description
+                                       and (pproj.proj_k <= pp["line"] + 1.0
+                                            or pproj.expected_outs < 16.5))]
                 # Pitcher OUTS workhorse UNDER guard (mirror to short-start):
                 # 21-day backtest top-decile pitcher outs under-projects by
                 # 1.18 outs (proj 17.0, actual 18.2). Top arms exceed our
@@ -527,6 +561,16 @@ def predict_slate(target_date: date | str | None = None,
                     _workhorse = pproj.expected_outs >= 16.5
                     if _high_outs_line or _workhorse:
                         vbs_all = [vb for vb in vbs_all if " UNDER " not in vb.description]
+                # Runs OVER lineup position filter: bottom-of-order batters
+                # (spots 6-9) rarely score enough to justify runs OVER 0.5 at
+                # the inflated plus-money odds Bovada posts. Bet log: Yastrzemski
+                # (spot 8) and Dubon (spot 7) both 0W at +210 on May 4.
+                # Only surface runs OVERs for top-5 lineup spots where run
+                # frequency is meaningfully higher.
+                if (not is_pitcher and pp["market"] == "runs" and vbs_all):
+                    _order = _lineup_order.get(_pid, 5)
+                    if _order > 5:
+                        vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
                 # Batter TB UNDER guard: top-decile TB projections under-shoot
                 # by 0.67 TB (proj 1.84, actual 2.51) — elite power hitters
                 # drive way more bases than projected. Drop TB UNDERs when
