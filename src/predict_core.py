@@ -543,12 +543,13 @@ def predict_slate(target_date: date | str | None = None,
                         # to overcome 1-K variance on the line.
                         vbs_all = [vb for vb in vbs_all
                                    if not (" UNDER " in vb.description and vb.edge_pct < 5.0)]
-                        # Low-line K UNDER guard: for lines <= 4.5, the gap
-                        # between projection and line must be >= 1.0 K. A 0.3 K
-                        # gap is well inside one-inning variance. Bet log losses:
-                        # Leahy UNDER 3.5 (proj ~3.2, actual 5), Junk UNDER 3.5
-                        # (proj ~3.2, actual 6). Requiring proj <= line-1.0 means
-                        # we only take these when we strongly expect a short/weak outing.
+                        # K UNDER block at line <= 2.5: too close to zero;
+                        # one extra K beats the line. 0W 1L in the log.
+                        if pp["line"] <= 2.5:
+                            vbs_all = [vb for vb in vbs_all if " UNDER " not in vb.description]
+                        # Low-line K UNDER guard: for lines <= 4.5, require a
+                        # meaningful projection gap. Raised to line-1.5 after
+                        # May 5 analysis (Leahy/Junk losses at ~0.3 gap).
                         if pp["line"] <= 4.5:
                             vbs_all = [vb for vb in vbs_all
                                        if not (" UNDER " in vb.description
@@ -562,13 +563,20 @@ def predict_slate(target_date: date | str | None = None,
                     #       yanked in 2nd inning with 1 K (Lowder, Rhett etc.)
                     # Requirements: proj_k > line + 1.0 (real gap, not noise)
                     #               AND expected_outs >= 16.5 (~5.5 IP, workhorse)
-                    # The existing short-start guard (< 14.5 outs) already
-                    # catches the most extreme quick-hook risk; this adds a higher
-                    # floor specifically for K OVERs where early exits are fatal.
                     vbs_all = [vb for vb in vbs_all
                                if not (" OVER " in vb.description
                                        and (pproj.proj_k <= pp["line"] + 1.0
                                             or pproj.expected_outs < 16.5))]
+                    # K OVER block at line <= 3.5: 0W 4L in the bet log.
+                    # Soft starters with low lines get quick-hooked before
+                    # accumulating Ks; the model over-projects their K rate.
+                    if pp["line"] <= 3.5:
+                        vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
+                    # K prop edge cap at 15%: bet log shows edge > 15% on K props
+                    # = 1W 8L (11%). A large edge gap on K bets almost always
+                    # means the book has information we lack (injury, planned short
+                    # start, pitch count). Sweet spot is 5-15%: 25W 21L (54%).
+                    vbs_all = [vb for vb in vbs_all if vb.edge_pct <= 15.0]
                 # Pitcher OUTS workhorse UNDER guard (mirror to short-start):
                 # 21-day backtest top-decile pitcher outs under-projects by
                 # 1.18 outs (proj 17.0, actual 18.2). Top arms exceed our
