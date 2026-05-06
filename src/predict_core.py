@@ -393,6 +393,26 @@ def predict_slate(target_date: date | str | None = None,
                 vb.game_pk = int(f.game_pk)
                 vb.starters_confirmed = starters_confirmed
             game_value = [vb for vb in game_value_all if vb.edge_pct >= edge_threshold * 100]
+
+            # Elite ace Over filter: when either starter has xFIP < 3.5, the model
+            # over-estimates scoring because ace dominance isn't fully captured.
+            # LAD@HOU May 5: Ohtani xFIP=3.44, model predicted 10.2, actual 3.
+            # Allow through only if the edge is overwhelming (> 15%).
+            _min_xfip = min(f.home_sp_xfip or 99.0, f.away_sp_xfip or 99.0)
+            game_value = [vb for vb in game_value
+                          if not (vb.market == "total"
+                                  and " Over " in vb.description
+                                  and _min_xfip < 3.5
+                                  and vb.edge_pct < 15.0)]
+
+            # Total bet minimum gap: the model prediction must differ from the
+            # book line by >= 1.0 run. A 0.2-run gap (e.g. pred=8.3, line=8.5)
+            # is inside single-inning variance — BOS@DET and SD@SF both had
+            # ~0.2-run Under gaps that exploded to 13 and 15 actual runs.
+            game_value = [vb for vb in game_value
+                          if not (vb.market == "total"
+                                  and abs(total_pred - vb.line) < 1.0)]
+
             gp.game_value = [_vb_to_dict(vb) for vb in game_value]
             gp.all_bets.extend(_vb_to_dict(vb) for vb in game_value_all)
             all_value_bets.extend(game_value)
@@ -532,7 +552,7 @@ def predict_slate(target_date: date | str | None = None,
                         if pp["line"] <= 4.5:
                             vbs_all = [vb for vb in vbs_all
                                        if not (" UNDER " in vb.description
-                                               and pproj.proj_k > pp["line"] - 1.0)]
+                                               and pproj.proj_k > pp["line"] - 1.5)]
                     # K OVER guard: require a meaningful projection gap AND a
                     # deep-start expectation. The 0W 5L at high-edge OVERs was
                     # driven by two failure modes:
@@ -569,7 +589,7 @@ def predict_slate(target_date: date | str | None = None,
                 # frequency is meaningfully higher.
                 if (not is_pitcher and pp["market"] == "runs" and vbs_all):
                     _order = _lineup_order.get(_pid, 5)
-                    if _order > 5:
+                    if _order > 4:
                         vbs_all = [vb for vb in vbs_all if " OVER " not in vb.description]
                 # Batter TB UNDER guard: top-decile TB projections under-shoot
                 # by 0.67 TB (proj 1.84, actual 2.51) — elite power hitters
