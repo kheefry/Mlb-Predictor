@@ -413,6 +413,19 @@ def predict_slate(target_date: date | str | None = None,
                           if not (vb.market == "total"
                                   and abs(total_pred - vb.line) < 1.0)]
 
+            # Total bet direction consistency: the model prediction must agree
+            # with the bet direction. An Under bet when model pred > line means
+            # we're betting against our own model — NegBin tail probabilities
+            # can manufacture apparent edge even when the mean disagrees.
+            # Bet log: direction-consistent totals 9W 2L (82%), inconsistent
+            # 4W 6L (40%). TX@DET Under 8.0 (pred=9.0) and CWS@SD Under 8.0
+            # (pred=9.2) both passed the gap filter (gap=-1.0/-1.2 > -1.0 threshold
+            # but directionally wrong) and both lost.
+            game_value = [vb for vb in game_value
+                          if not (vb.market == "total"
+                                  and ((" Over " in vb.description and total_pred < vb.line)
+                                       or (" Under " in vb.description and total_pred > vb.line)))]
+
             gp.game_value = [_vb_to_dict(vb) for vb in game_value]
             gp.all_bets.extend(_vb_to_dict(vb) for vb in game_value_all)
             all_value_bets.extend(game_value)
@@ -577,6 +590,12 @@ def predict_slate(target_date: date | str | None = None,
                     # means the book has information we lack (injury, planned short
                     # start, pitch count). Sweet spot is 5-15%: 25W 21L (54%).
                     vbs_all = [vb for vb in vbs_all if vb.edge_pct <= 15.0]
+                    # K prop model_prob floor at 0.60: low-confidence K bets
+                    # (prob < 0.60) are effectively coin flips — 10W 11L (48%)
+                    # in the bet log. High-confidence K bets (prob >= 0.60)
+                    # go 14W 7L (67%). Filtering the low-confidence ones focuses
+                    # the leaderboard on K bets the model actually trusts.
+                    vbs_all = [vb for vb in vbs_all if vb.model_prob >= 0.60]
                 # Pitcher OUTS workhorse UNDER guard (mirror to short-start):
                 # 21-day backtest top-decile pitcher outs under-projects by
                 # 1.18 outs (proj 17.0, actual 18.2). Top arms exceed our

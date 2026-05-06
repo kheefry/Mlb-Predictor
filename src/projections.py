@@ -469,11 +469,15 @@ def project_batter(
     sp_k9 = opp_sp_q.get("k9", LG["k9"])
     sp_bb9 = opp_sp_q.get("bb9", LG["bb9"])
     sp_hr9 = opp_sp_q.get("hr9", LG["hr9"])
-    sp_era = opp_sp_q.get("era", 4.50)
+    # Use xFIP (park/HR-luck-neutral) instead of ERA for the hit quality
+    # multiplier. ERA fluctuates with BABIP, sequencing and bullpen support;
+    # xFIP is a better in-season predictor of true pitcher quality.
+    # Falls back through FIP → ERA if xFIP unavailable.
+    sp_xfip = opp_sp_q.get("xfip") or opp_sp_q.get("fip") or opp_sp_q.get("era") or 4.50
     k_mult  = sp_k9 / LG["k9"]
     bb_mult = sp_bb9 / LG["bb9"]
     hr_mult_pitch = sp_hr9 / LG["hr9"]
-    avg_mult = (sp_era / 4.50) ** 0.5     # better pitcher (lower ERA) => lower hits
+    avg_mult = (sp_xfip / 4.50) ** 0.5    # better pitcher (lower xFIP) => lower hits
 
     # Platoon adjustment: for switch hitters, batting side flips relative to
     # opposing pitcher. We expose `bat_side` already resolved by the caller
@@ -505,9 +509,19 @@ def project_batter(
     proj_bb = ePA * bb_pa * bb_mult
     # RBI scales with team run environment relative to average
     proj_rbi = ePA * rbi_pa * (team_pred_runs / 4.5) * pf_runs * runs_w
-    # Runs scored ~ getting on base * scoring rate, simplest model = team_runs / 9 * (OBP relative)
+    # Runs scored: lineup position drives scoring rate far more than PA count.
+    # FanGraphs 2021-2025 avg runs/PA by order:
+    #   1: 0.115,  2: 0.111,  3: 0.103,  4: 0.098,  5: 0.093
+    #   6: 0.085,  7: 0.080,  8: 0.074,  9: 0.070
+    # We normalise around spot 5 (≈0.093) as the baseline (all factors sum to ~1.0
+    # on average across a lineup). OBP relative to league still adjusts per player.
+    _runs_pos_factor = {
+        1: 1.24, 2: 1.19, 3: 1.11, 4: 1.05, 5: 1.00,
+        6: 0.91, 7: 0.86, 8: 0.80, 9: 0.75,
+    }
+    _rpos = _runs_pos_factor.get(bat_order, 1.0)
     obp_est = (avg + bb_pa) / (1 + bb_pa) if (1 + bb_pa) else 0.32
-    proj_runs = (team_pred_runs / 9.0) * (obp_est / 0.320) * (ePA / 4.0)
+    proj_runs = (team_pred_runs / 9.0) * (obp_est / 0.320) * _rpos
     proj_sb = sb_pg
 
     out = BatterProjection(

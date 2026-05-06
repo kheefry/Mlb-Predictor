@@ -47,7 +47,7 @@ _PRIOR_BF_PIT  = 150    # ≈ 50 IP
 
 # Cache version suffix — bump when selections change so stale files are ignored
 _BAT_VER = "v3"   # bumped when xba added
-_PIT_VER = "v3"   # v3: whiff_percent + k_percent; k_pct now used as primary K prior
+_PIT_VER = "v4"   # v4: added called_strike_percent (csp) to pitcher dict
 
 
 # ---------- Internals ----------
@@ -167,6 +167,7 @@ def get_pitcher_stats(year: int) -> dict[int, dict]:
             "hard_hit":   _safe(row.get("hard_hit_percent")),
             "whiff_pct":  _safe(row.get("whiff_percent")),
             "k_pct":      _safe(row.get("k_percent")),
+            "csp":        _safe(row.get("called_strike_percent")),  # called-strike% — stabilises ~10 BF
             "bf":         _safe(row.get("pa"), 0.0),   # Savant returns "pa" for pitchers too
         }
     return out
